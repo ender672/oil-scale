@@ -20,6 +20,10 @@ cargo run --release --bin imgscale -- WIDTH HEIGHT input.jpg [output.jpg]
 
 Aspect ratio is preserved automatically. Output path defaults to `output.jpg` or `output.png` based on input format.
 
+## Minimum Supported Rust Version
+
+1.65 (driven by the `libc` dependency when the default `ffi` feature is enabled).
+
 ## Building
 
 ```sh
