@@ -82,7 +82,7 @@ fn resize(pixels: &[u8], width: u32, height: u32, cs: ColorSpace, out_width: u32
 	let mut outbuf = vec![0u8; out_width as usize * cmp];
 
 	let start = Instant::now();
-	let mut scaler = OilScale::new(height, out_height, width, out_width, cs).unwrap();
+	let mut scaler = OilScale::new(width, height, out_width, out_height, cs).unwrap();
 	let mut in_line = 0usize;
 	for _ in 0..out_height {
 		while scaler.slots() > 0 {

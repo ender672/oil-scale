@@ -329,7 +329,7 @@ fn do_oil_scale(
     cs: ColorSpace,
 ) -> Vec<Vec<u8>> {
     let cmp = cs.components();
-    let mut os = OilScale::new(in_height, out_height, in_width, out_width, cs).unwrap();
+    let mut os = OilScale::new(in_width, in_height, out_width, out_height, cs).unwrap();
     let mut output: Vec<Vec<u8>> = (0..out_height)
         .map(|_| vec![0u8; out_width as usize * cmp])
         .collect();

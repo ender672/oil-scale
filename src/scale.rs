@@ -665,10 +665,10 @@ fn scale_down_cmyk(
 impl OilScale {
     /// Create a new scaler for the given input/output dimensions and color space.
     pub fn new(
-        in_height: u32,
-        out_height: u32,
         in_width: u32,
+        in_height: u32,
         out_width: u32,
+        out_height: u32,
         cs: ColorSpace,
     ) -> Result<Self, OilError> {
         if in_height < 1

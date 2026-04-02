@@ -57,7 +57,7 @@ let (out_w, out_h) = (480, 270);
 let cs = ColorSpace::RGBA;
 let cmp = cs.components(); // 4
 
-let mut scaler = OilScale::new(in_h, out_h, in_w, out_w, cs).unwrap();
+let mut scaler = OilScale::new(in_w, in_h, out_w, out_h, cs).unwrap();
 
 let in_stride = in_w as usize * cmp;
 let out_stride = out_w as usize * cmp;

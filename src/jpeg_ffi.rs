@@ -183,7 +183,7 @@ pub fn resize_jpeg_file(
     let cs = jcs_to_colorspace(jcs)?;
     let cmp = cs.components();
 
-    let mut scaler = OilScale::new(in_height, out_height, in_width, out_width, cs)?;
+    let mut scaler = OilScale::new(in_width, in_height, out_width, out_height, cs)?;
 
     let in_stride = in_width as usize * cmp;
     let out_stride = out_width as usize * cmp;
@@ -221,7 +221,7 @@ pub fn resize_jpeg(
     let cs = jcs_to_colorspace(jcs)?;
     let cmp = cs.components();
 
-    let mut scaler = OilScale::new(in_height, out_height, in_width, out_width, cs)?;
+    let mut scaler = OilScale::new(in_width, in_height, out_width, out_height, cs)?;
 
     let in_stride = in_width as usize * cmp;
     let out_stride = out_width as usize * cmp;
