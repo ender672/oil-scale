@@ -115,7 +115,7 @@ Aspect ratio is preserved automatically. Output path defaults to `output.jpg` or
 
 ## Minimum Supported Rust Version
 
-1.61 with default features. 1.65 when the `jpeg-turbo` feature is enabled (due to `libc`).
+1.70
 
 ## Building
 

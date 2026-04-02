@@ -33,14 +33,14 @@
 pub mod colorspace;
 /// Core streaming scaler.
 pub mod scale;
-#[cfg(feature = "jpeg")]
 /// JPEG codec helpers.
+#[cfg(feature = "jpeg")]
 pub mod jpeg;
-#[cfg(feature = "png")]
 /// PNG codec helpers.
+#[cfg(feature = "png")]
 pub mod png;
-#[cfg(feature = "jpeg-turbo")]
 /// libjpeg-turbo FFI bindings.
+#[cfg(feature = "jpeg-turbo")]
 pub mod jpeg_ffi;
 
 pub(crate) mod srgb;
@@ -50,7 +50,3 @@ pub(crate) mod sse2;
 
 pub use colorspace::ColorSpace;
 pub use scale::{OilScale, Error, fix_ratio};
-
-/// Deprecated alias for [`Error`].
-#[deprecated(since = "0.2.0", note = "renamed to `Error`")]
-pub type OilError = Error;

@@ -49,9 +49,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// Deprecated alias for [`Error`].
-#[deprecated(since = "0.2.0", note = "renamed to `Error`")]
-pub type OilError = Error;
 
 /// Streaming image scaler that processes one scanline at a time.
 pub struct OilScale {
@@ -883,10 +880,18 @@ impl OilScale {
         self.out_pos += 1;
     }
 
-    /// Reset row counters so the scaler can be reused.
+    /// Reset the scaler so it can process another image of the same dimensions.
+    ///
+    /// This recalculates internal state that is consumed during processing
+    /// (border counters and accumulator buffers).
     pub fn reset(&mut self) {
         self.in_pos = 0;
         self.out_pos = 0;
+        if self.is_upscale {
+            self.upscale_init();
+        } else {
+            self.downscale_init();
+        }
     }
 
     fn get_rb_line(&self, line: u32) -> usize {
@@ -1030,7 +1035,7 @@ impl OilScale {
         let sl_len = cmp * self.out_width as usize;
 
         let offsets: [usize; 4] = [
-            self.get_rb_line((self.in_pos + 0) % 4),
+            self.get_rb_line(self.in_pos % 4),
             self.get_rb_line((self.in_pos + 1) % 4),
             self.get_rb_line((self.in_pos + 2) % 4),
             self.get_rb_line((self.in_pos + 3) % 4),

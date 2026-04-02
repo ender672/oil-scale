@@ -1,5 +1,5 @@
 /// Pixel format understood by [`OilScale`](crate::OilScale).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColorSpace {
     /// Placeholder for uninitialized or unsupported formats.
     Unknown,

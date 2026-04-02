@@ -47,7 +47,7 @@ fn resize_grayscale() {
     assert_eq!(info.pixel_format, jpeg_decoder::PixelFormat::L8);
     assert_eq!(info.width, 4);
     assert_eq!(info.height, 4);
-    assert_eq!(out_pixels.len(), 4 * 4 * 1);
+    assert_eq!(out_pixels.len(), 4 * 4);
 }
 
 #[test]

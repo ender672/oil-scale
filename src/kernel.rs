@@ -41,16 +41,16 @@ pub fn calc_coeffs(coeffs: &mut [f32], tx: f32, taps: usize, ltrim: usize, rtrim
     let mut pos = 1.0 - tx - (taps / 2) as f32 + ltrim as f32;
     let mut fudge = 0.0f32;
 
-    for i in ltrim..(taps - rtrim) {
+    for c in &mut coeffs[ltrim..(taps - rtrim)] {
         let tmp = catrom(pos.abs() / tap_mult) / tap_mult;
         fudge += tmp;
-        coeffs[i] = tmp;
+        *c = tmp;
         pos += 1.0;
     }
 
     let fudge = 1.0 / fudge;
-    for i in ltrim..(taps - rtrim) {
-        coeffs[i] *= fudge;
+    for c in &mut coeffs[ltrim..(taps - rtrim)] {
+        *c *= fudge;
     }
 }
 
@@ -109,7 +109,7 @@ pub fn scale_down_coeffs(
     border_buf: &mut [i32],
     tmp_coeffs: &mut [f32],
 ) {
-    let taps = calc_taps(in_dim as u32, out_dim as u32);
+    let taps = calc_taps(in_dim, out_dim);
     let mut ends = [-1i32; 4];
 
     for i in 0..out_dim as usize {
@@ -135,7 +135,7 @@ pub fn scale_down_coeffs(
         }
         calc_coeffs(tmp_coeffs, tx, taps, ltrim, rtrim);
 
-        for j in ltrim..(taps - rtrim) {
+        for (j, &coeff) in tmp_coeffs.iter().enumerate().take(taps - rtrim).skip(ltrim) {
             let pos = (smp_start + j as i32) as usize;
 
             let offset = if pos as i32 > ends[(i + 3) % 4] {
@@ -148,7 +148,7 @@ pub fn scale_down_coeffs(
                 3
             };
 
-            coeff_buf[pos * 4 + offset] = tmp_coeffs[j];
+            coeff_buf[pos * 4 + offset] = coeff;
         }
     }
 }

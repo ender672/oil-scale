@@ -1566,7 +1566,7 @@ pub unsafe fn yscale_up_g(
     while i < len {
         let s = coeffs[0] * *l0.add(i) + coeffs[1] * *l1.add(i)
             + coeffs[2] * *l2.add(i) + coeffs[3] * *l3.add(i);
-        let s = if s > 1.0 { 1.0 } else if s < 0.0 { 0.0 } else { s };
+        let s = s.clamp(0.0, 1.0);
         *out_ptr.add(i) = (s * 255.0 + 0.5) as u8;
         i += 1;
     }
@@ -1700,7 +1700,7 @@ pub unsafe fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     // Scalar tail
     while i < sl_len {
         let val = *s_ptr.add(s_idx);
-        let val = if val > 1.0 { 1.0 } else if val < 0.0 { 0.0 } else { val };
+        let val = val.clamp(0.0, 1.0);
         *out_ptr.add(i) = (val * 255.0 + 0.5) as u8;
         // shift_left
         *s_ptr.add(s_idx) = *s_ptr.add(s_idx + 1);
@@ -2121,12 +2121,12 @@ pub unsafe fn yscale_up_ga(
             + coeffs[2] * *l2.add(i) + coeffs[3] * *l3.add(i);
         let a = coeffs[0] * *l0.add(i + 1) + coeffs[1] * *l1.add(i + 1)
             + coeffs[2] * *l2.add(i + 1) + coeffs[3] * *l3.add(i + 1);
-        let alpha = if a < 0.0 { 0.0 } else if a > 1.0 { 1.0 } else { a };
+        let alpha = a.clamp(0.0, 1.0);
         let mut gray = g;
         if alpha != 0.0 {
             gray /= alpha;
         }
-        let gray = if gray < 0.0 { 0.0 } else if gray > 1.0 { 1.0 } else { gray };
+        let gray = gray.clamp(0.0, 1.0);
         *out_ptr.add(i) = (gray * 255.0 + 0.5) as u8;
         *out_ptr.add(i + 1) = (alpha * 255.0 + 0.5) as u8;
         i += 2;
@@ -2305,14 +2305,14 @@ pub unsafe fn yscale_out_ga(sums: &mut [f32], width: u32, out: &mut [u8]) {
         let alpha_val = _mm_cvtss_f32(_mm_castsi128_ps(v1));
 
         // Clamp alpha
-        let alpha = if alpha_val < 0.0 { 0.0 } else if alpha_val > 1.0 { 1.0 } else { alpha_val };
+        let alpha = alpha_val.clamp(0.0, 1.0);
 
         // Un-premultiply gray
         let mut gray = gray_val;
         if alpha != 0.0 {
             gray /= alpha;
         }
-        let gray = if gray < 0.0 { 0.0 } else if gray > 1.0 { 1.0 } else { gray };
+        let gray = gray.clamp(0.0, 1.0);
 
         *out_ptr.add(o_idx) = (gray * 255.0 + 0.5) as u8;
         *out_ptr.add(o_idx + 1) = (alpha * 255.0 + 0.5) as u8;

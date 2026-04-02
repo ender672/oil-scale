@@ -54,20 +54,20 @@ fn ref_calc_coeffs(coeffs: &mut [f64], offset: f64, taps: usize, ltrim: usize, r
     let tap_mult = taps as f64 / 4.0;
     let mut fudge = 0.0;
 
-    for i in 0..taps {
+    for (i, c) in coeffs.iter_mut().enumerate().take(taps) {
         if i < ltrim || i >= taps - rtrim {
-            coeffs[i] = 0.0;
+            *c = 0.0;
             continue;
         }
         let tap_offset = 1.0 - offset - (taps as f64) / 2.0 + i as f64;
-        coeffs[i] = ref_catrom(tap_offset.abs() / tap_mult) / tap_mult;
-        fudge += coeffs[i];
+        *c = ref_catrom(tap_offset.abs() / tap_mult) / tap_mult;
+        fudge += *c;
     }
 
     let mut total_check = 0.0;
-    for i in 0..taps {
-        coeffs[i] /= fudge;
-        total_check += coeffs[i];
+    for c in coeffs.iter_mut().take(taps) {
+        *c /= fudge;
+        total_check += *c;
     }
     assert!(
         (total_check - 1.0).abs() < 0.0000000001,
@@ -287,10 +287,10 @@ fn ref_scale(
     let mut intermediate: Vec<Vec<f64>> = Vec::with_capacity(in_height);
     let mut pre_line = vec![0.0f64; stride];
 
-    for row in 0..in_height {
+    for input_row in &input[..in_height] {
         // Convert chars to floats
         for j in 0..stride {
-            pre_line[j] = input[row][j] as f64 / 255.0;
+            pre_line[j] = input_row[j] as f64 / 255.0;
         }
 
         // Preprocess each pixel
@@ -311,9 +311,9 @@ fn ref_scale(
     ref_yscale(&intermediate, out_width, in_height, &mut output, out_height, cmp);
 
     // Postprocess
-    for row in 0..out_height {
+    for out_row in &mut output[..out_height] {
         for j in 0..out_width {
-            postprocess(&mut output[row][j * cmp..(j + 1) * cmp], cs);
+            postprocess(&mut out_row[j * cmp..(j + 1) * cmp], cs);
         }
     }
 
@@ -335,12 +335,12 @@ fn do_oil_scale(
         .collect();
 
     let mut in_line = 0usize;
-    for i in 0..out_height as usize {
+    for out_row in output.iter_mut().take(out_height as usize) {
         while os.slots() > 0 {
             os.push_scanline(&input[in_line]);
             in_line += 1;
         }
-        os.read_scanline(&mut output[i]);
+        os.read_scanline(out_row);
     }
 
     output
@@ -402,9 +402,9 @@ fn test_scale_catrom_extremes(cs: ColorSpace) {
 
     // Solid white center with black border, replicated across components
     for j in 0..cmp {
-        input[1][1 * cmp + j] = 255;
+        input[1][cmp + j] = 255;
         input[1][2 * cmp + j] = 255;
-        input[2][1 * cmp + j] = 255;
+        input[2][cmp + j] = 255;
         input[2][2 * cmp + j] = 255;
     }
 
