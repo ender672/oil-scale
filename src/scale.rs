@@ -49,7 +49,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-
 /// Streaming image scaler that processes one scanline at a time.
 pub struct OilScale {
     in_height: u32,
@@ -711,10 +710,8 @@ impl OilScale {
         }
 
         // Reject unsupported color spaces early instead of panicking later
-        match cs {
-            ColorSpace::G | ColorSpace::GA | ColorSpace::RGB
-            | ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK => {}
-            _ => return Err(Error::InvalidArgument),
+        if cs.components() == 0 {
+            return Err(Error::InvalidArgument);
         }
 
         // Ensure tables are initialized
@@ -1024,7 +1021,6 @@ impl OilScale {
                     &self.borders_x,
                 );
             }
-            _ => unimplemented!("colorspace {:?} not yet supported", self.cs),
         }
 
         self.in_pos += 1;
@@ -1092,7 +1088,6 @@ impl OilScale {
                 #[cfg(not(target_arch = "x86_64"))]
                 yscale_up_ga(lines, sl_len, coeffs, output);
             }
-            _ => unimplemented!("colorspace {:?} not yet supported", self.cs),
         }
 
         self.borders_y[self.in_pos as usize - 1] -= 1;
@@ -1240,39 +1235,37 @@ impl OilScale {
                     &coeffs_y,
                 );
             }
-            _ => unimplemented!("colorspace {:?} not yet supported", self.cs),
         }
 
         self.borders_y[self.out_pos as usize] -= 1;
         self.in_pos += 1;
     }
-
 }
 
 /// Adjust output dimensions to maintain the input aspect ratio, fitting within
-/// the given bounding box.
+/// the given bounding box. Returns the adjusted `(width, height)`.
 pub fn fix_ratio(
     src_width: u32,
     src_height: u32,
-    out_width: &mut u32,
-    out_height: &mut u32,
-) -> Result<(), Error> {
-    if src_width < 1 || src_height < 1 || *out_width < 1 || *out_height < 1 {
+    max_width: u32,
+    max_height: u32,
+) -> Result<(u32, u32), Error> {
+    if src_width < 1 || src_height < 1 || max_width < 1 || max_height < 1 {
         return Err(Error::InvalidArgument);
     }
 
-    let width_ratio = *out_width as f64 / src_width as f64;
-    let height_ratio = *out_height as f64 / src_height as f64;
+    let width_ratio = max_width as f64 / src_width as f64;
+    let height_ratio = max_height as f64 / src_height as f64;
 
     if width_ratio < height_ratio {
         let tmp = (width_ratio * src_height as f64).round();
-        *out_height = if tmp < 1.0 { 1 } else { tmp as u32 };
+        let h = if tmp < 1.0 { 1 } else { tmp as u32 };
+        Ok((max_width, h))
     } else {
         let tmp = (height_ratio * src_width as f64).round();
-        *out_width = if tmp < 1.0 { 1 } else { tmp as u32 };
+        let w = if tmp < 1.0 { 1 } else { tmp as u32 };
+        Ok((w, max_height))
     }
-
-    Ok(())
 }
 
 impl OilScale {
@@ -1321,7 +1314,6 @@ impl OilScale {
                 #[cfg(not(target_arch = "x86_64"))]
                 yscale_out_ga(&mut self.sums_y, self.out_width as usize, output);
             }
-            _ => unimplemented!("colorspace {:?} not yet supported", self.cs),
         }
     }
 }

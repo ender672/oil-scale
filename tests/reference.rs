@@ -102,7 +102,7 @@ fn clamp_f(val: f64) -> f64 {
 
 fn preprocess(pixel: &mut [f64], cs: ColorSpace) {
     match cs {
-        ColorSpace::G | ColorSpace::CMYK | ColorSpace::Unknown => {}
+        ColorSpace::G | ColorSpace::CMYK => {}
         ColorSpace::GA => {
             pixel[0] *= pixel[1];
         }
@@ -116,17 +116,13 @@ fn preprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[1] = pixel[3] * srgb_to_linear_ref(pixel[1]);
             pixel[2] = pixel[3] * srgb_to_linear_ref(pixel[2]);
         }
-        ColorSpace::ARGB => {
-            pixel[1] = pixel[0] * srgb_to_linear_ref(pixel[1]);
-            pixel[2] = pixel[0] * srgb_to_linear_ref(pixel[2]);
-            pixel[3] = pixel[0] * srgb_to_linear_ref(pixel[3]);
-        }
         ColorSpace::RGBX => {
             pixel[0] = srgb_to_linear_ref(pixel[0]);
             pixel[1] = srgb_to_linear_ref(pixel[1]);
             pixel[2] = srgb_to_linear_ref(pixel[2]);
             pixel[3] = 1.0;
         }
+        _ => {}
     }
 }
 
@@ -160,18 +156,6 @@ fn postprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[2] = linear_to_srgb_ref(pixel[2]);
             pixel[3] = alpha;
         }
-        ColorSpace::ARGB => {
-            let alpha = clamp_f(pixel[0]);
-            if alpha != 0.0 {
-                pixel[1] /= alpha;
-                pixel[2] /= alpha;
-                pixel[3] /= alpha;
-            }
-            pixel[0] = alpha;
-            pixel[1] = linear_to_srgb_ref(pixel[1]);
-            pixel[2] = linear_to_srgb_ref(pixel[2]);
-            pixel[3] = linear_to_srgb_ref(pixel[3]);
-        }
         ColorSpace::CMYK => {
             pixel[0] = clamp_f(pixel[0]);
             pixel[1] = clamp_f(pixel[1]);
@@ -184,7 +168,7 @@ fn postprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[2] = linear_to_srgb_ref(pixel[2]);
             pixel[3] = 1.0;
         }
-        ColorSpace::Unknown => {}
+        _ => {}
     }
 }
 

@@ -40,8 +40,7 @@ Use `fix_ratio` to preserve aspect ratio within a bounding box:
 ```rust
 use oil_scale::fix_ratio;
 
-let (mut out_w, mut out_h) = (200, 200);
-fix_ratio(1920, 1080, &mut out_w, &mut out_h).unwrap();
+let (out_w, out_h) = fix_ratio(1920, 1080, 200, 200).unwrap();
 // out_w=200, out_h=113
 ```
 

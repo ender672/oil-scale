@@ -98,10 +98,8 @@ fn resize(pixels: &[u8], width: u32, height: u32, cs: ColorSpace, out_width: u32
 }
 
 fn do_bench(pixels: &[u8], width: u32, height: u32, cs: ColorSpace, ratio: f64, iterations: u32) {
-	let mut out_width = (width as f64 * ratio).round() as u32;
-	let mut out_height = 500_000;
-
-	fix_ratio(width, height, &mut out_width, &mut out_height).unwrap();
+	let out_width = (width as f64 * ratio).round() as u32;
+	let (out_width, out_height) = fix_ratio(width, height, out_width, 500_000).unwrap();
 
 	let mut t_min: f64 = f64::MAX;
 	for _ in 0..iterations {
