@@ -22,47 +22,68 @@ fn make_cmyk_jpeg(width: u16, height: u16, pixels: &[u8]) -> Vec<u8> {
     buf
 }
 
+/// Encode an RGB JPEG from raw pixel data.
+fn make_rgb_jpeg(width: u16, height: u16, pixels: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let encoder = jpeg_encoder::Encoder::new(&mut buf, 95);
+    encoder
+        .encode(pixels, width, height, jpeg_encoder::ColorType::Rgb)
+        .expect("encode RGB JPEG");
+    buf
+}
+
 #[test]
 fn ffi_resize_downscale() {
-    let input = std::fs::read("../dalai.jpg").expect("read test JPEG");
-    let output = jpeg_ffi::resize_jpeg(&input, 100, 100, 94).expect("ffi resize");
+    let (w, h) = (64u16, 48u16);
+    let pixels: Vec<u8> = (0..(w as usize * h as usize * 3))
+        .map(|i| (i % 256) as u8)
+        .collect();
+    let input = make_rgb_jpeg(w, h, &pixels);
+    let output = jpeg_ffi::resize_jpeg(&input, 20, 20, 94).expect("ffi resize");
 
     let mut decoder = jpeg_decoder::Decoder::new(&output[..]);
-    let pixels = decoder.decode().expect("decode FFI output");
+    let out_pixels = decoder.decode().expect("decode FFI output");
     let info = decoder.info().unwrap();
 
-    // dalai.jpg is 258x222, so 100x100 should produce valid output
-    assert!(info.width > 0 && info.width <= 100);
-    assert!(info.height > 0 && info.height <= 100);
-    assert_eq!(pixels.len(), info.width as usize * info.height as usize * 3);
+    assert!(info.width > 0 && info.width <= 20);
+    assert!(info.height > 0 && info.height <= 20);
+    assert_eq!(out_pixels.len(), info.width as usize * info.height as usize * 3);
 }
 
 #[test]
 fn ffi_resize_upscale() {
-    let input = std::fs::read("../dalai.jpg").expect("read test JPEG");
-    let output = jpeg_ffi::resize_jpeg(&input, 500, 500, 94).expect("ffi resize");
+    let (w, h) = (16u16, 12u16);
+    let pixels: Vec<u8> = (0..(w as usize * h as usize * 3))
+        .map(|i| (i % 256) as u8)
+        .collect();
+    let input = make_rgb_jpeg(w, h, &pixels);
+    let output = jpeg_ffi::resize_jpeg(&input, 100, 100, 94).expect("ffi resize");
 
     let mut decoder = jpeg_decoder::Decoder::new(&output[..]);
-    let pixels = decoder.decode().expect("decode FFI output");
+    let out_pixels = decoder.decode().expect("decode FFI output");
     let info = decoder.info().unwrap();
 
-    assert!(info.width > 0 && info.width <= 500);
-    assert!(info.height > 0 && info.height <= 500);
-    assert_eq!(pixels.len(), info.width as usize * info.height as usize * 3);
+    assert!(info.width > 0 && info.width <= 100);
+    assert!(info.height > 0 && info.height <= 100);
+    assert_eq!(out_pixels.len(), info.width as usize * info.height as usize * 3);
 }
 
 #[test]
-fn ffi_resize_earth() {
-    let input = std::fs::read("../earth.jpg").expect("read test JPEG");
-    let output = jpeg_ffi::resize_jpeg(&input, 300, 150, 85).expect("ffi resize");
+fn ffi_resize_non_square() {
+    let (w, h) = (80u16, 40u16);
+    let pixels: Vec<u8> = (0..(w as usize * h as usize * 3))
+        .map(|i| (i % 256) as u8)
+        .collect();
+    let input = make_rgb_jpeg(w, h, &pixels);
+    let output = jpeg_ffi::resize_jpeg(&input, 60, 30, 85).expect("ffi resize");
 
     let mut decoder = jpeg_decoder::Decoder::new(&output[..]);
-    let pixels = decoder.decode().expect("decode FFI output");
+    let out_pixels = decoder.decode().expect("decode FFI output");
     let info = decoder.info().unwrap();
 
-    assert!(info.width > 0 && info.width <= 300);
-    assert!(info.height > 0 && info.height <= 150);
-    assert_eq!(pixels.len(), info.width as usize * info.height as usize * 3);
+    assert!(info.width > 0 && info.width <= 60);
+    assert!(info.height > 0 && info.height <= 30);
+    assert_eq!(out_pixels.len(), info.width as usize * info.height as usize * 3);
 }
 
 #[test]
