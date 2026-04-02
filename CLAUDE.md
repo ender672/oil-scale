@@ -34,12 +34,12 @@ cargo run --release --bin benchmark -- image.png
 ## Code structure
 
 - `src/lib.rs` -- public API re-exports: `OilScale`, `OilError`, `ColorSpace`
-- `src/scale.rs` -- core scaling engine (streaming scanline-by-scanline processing)
+- `src/scale.rs` -- core scaling engine (streaming scanline-by-scanline processing), `fix_ratio`
 - `src/kernel.rs` -- Catmull-Rom kernel and coefficient computation
 - `src/colorspace.rs` -- `ColorSpace` enum (G, GA, RGB, RGBA, ARGB, RGBX, CMYK)
 - `src/srgb.rs` -- sRGB gamma conversion lookup tables
 - `src/png.rs` -- PNG decode/resize/encode (`resize_png`, `resize_png_file`, `png_dimensions`)
-- `src/jpeg.rs` -- pure Rust JPEG decode/resize/encode (`resize_jpeg`, `fix_ratio`)
+- `src/jpeg.rs` -- pure Rust JPEG decode/resize/encode (`resize_jpeg`)
 - `src/jpeg_ffi.rs` -- libjpeg-turbo FFI bindings (feature-gated on `jpeg-turbo`)
 - `src/sse2.rs` -- x86_64 SSE2 SIMD optimizations
 - `src/bin/imgscale.rs` -- CLI image resizing tool
@@ -66,4 +66,4 @@ cargo run --release --bin benchmark -- image.png
 ## Conventions
 
 - JPEG quality in `imgscale` is hardcoded to 94.
-- `fix_ratio()` lives in `jpeg.rs` but is used for all formats to preserve aspect ratio.
+- `fix_ratio()` lives in `scale.rs` and is re-exported from the crate root.
