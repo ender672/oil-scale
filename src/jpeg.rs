@@ -1,9 +1,6 @@
 use crate::colorspace::ColorSpace;
 use crate::scale::{OilError, OilScale};
 
-// Re-export fix_ratio for backwards compatibility
-pub use crate::scale::fix_ratio;
-
 /// Decode a JPEG from bytes, resize it, and re-encode as JPEG.
 pub fn resize_jpeg(
     input: &[u8],

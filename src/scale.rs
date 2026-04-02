@@ -8,7 +8,7 @@ const MAX_DIMENSION: u32 = 1_000_000;
 const TAPS: usize = 4;
 
 /// Errors returned by [`OilScale`] operations.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OilError {
     /// A parameter was out of range or otherwise invalid (e.g. zero dimensions,
     /// dimensions exceeding the 1,000,000 limit, or mismatched scale directions).
@@ -686,6 +686,13 @@ impl OilScale {
         // Only allow upscaling if both dimensions are being upscaled
         if (out_height > in_height) != (out_width > in_width) {
             return Err(OilError::InvalidArgument);
+        }
+
+        // Reject unsupported color spaces early instead of panicking later
+        match cs {
+            ColorSpace::G | ColorSpace::GA | ColorSpace::RGB
+            | ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK => {}
+            _ => return Err(OilError::InvalidArgument),
         }
 
         // Ensure tables are initialized

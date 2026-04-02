@@ -70,7 +70,7 @@ fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path:
             eprintln!("Unable to read JPEG header: {:?}", e);
             process::exit(1);
         });
-        oil_scale::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
+        oil_scale::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
             eprintln!("Error adjusting aspect ratio: {:?}", e);
             process::exit(1);
         });
@@ -89,7 +89,7 @@ fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path:
             process::exit(1);
         });
         let info = decoder.info().unwrap();
-        oil_scale::jpeg::fix_ratio(info.width as u32, info.height as u32, width, height)
+        oil_scale::fix_ratio(info.width as u32, info.height as u32, width, height)
             .unwrap_or_else(|e| {
                 eprintln!("Error adjusting aspect ratio: {:?}", e);
                 process::exit(1);
@@ -119,7 +119,7 @@ fn resize_png(input_path: &str, width: &mut u32, height: &mut u32, output_path: 
         process::exit(1);
     });
 
-    oil_scale::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
+    oil_scale::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
         eprintln!("Error adjusting aspect ratio: {:?}", e);
         process::exit(1);
     });

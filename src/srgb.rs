@@ -66,6 +66,7 @@ impl SrgbTables {
     }
 
     /// Map a linear RGB float to an sRGB byte using the lookup table.
+    #[cfg(not(target_arch = "x86_64"))]
     #[inline]
     pub fn linear_to_srgb(&self, val: f32) -> u8 {
         let idx = (val * (self.l2s_len - 1) as f32) as i32;

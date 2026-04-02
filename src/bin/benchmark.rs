@@ -4,7 +4,7 @@ use std::process;
 use std::time::Instant;
 
 use oil_scale::colorspace::ColorSpace;
-use oil_scale::jpeg::fix_ratio;
+use oil_scale::fix_ratio;
 use oil_scale::scale::OilScale;
 
 #[derive(Clone, Copy, PartialEq)]
