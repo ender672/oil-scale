@@ -28,7 +28,7 @@ cargo run --release --bin benchmark -- image.png
 ## Key design decisions
 
 - **Streaming API**: `OilScale` processes one scanline at a time to minimize memory. Call `slots()` to know how many input lines to `push_scanline()` before calling `read_scanline()`.
-- **Separable convolution**: horizontal and vertical passes are independent, reducing complexity.
+- **Separable convolution**: horizontal and vertical passes are independent.
 - **sRGB correctness**: all interpolation happens in linear light space using precomputed lookup tables.
 - **Premultiplied alpha**: RGB channels are premultiplied by alpha before interpolation, then unpremultiplied on output.
 - **Adaptive kernel width**: downscaling widens the kernel to cover all input pixels and prevent aliasing. Taps = `4 * (in_dim / out_dim)`, always even.
