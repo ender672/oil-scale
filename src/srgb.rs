@@ -66,7 +66,7 @@ impl SrgbTables {
     }
 
     /// Map a linear RGB float to an sRGB byte using the lookup table.
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
     #[inline]
     pub fn linear_to_srgb(&self, val: f32) -> u8 {
         let idx = (val * (self.l2s_len - 1) as f32) as i32;
@@ -77,6 +77,7 @@ impl SrgbTables {
     /// This mirrors the C `l2s_map` pointer: indices can be negative (for
     /// Catmull-Rom overshoot) and positive up to l2s_len, relying on padding
     /// in both directions.
+    #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
     #[inline]
     pub fn l2s_ptr(&self) -> *const u8 {
         unsafe { self.l2s_all.as_ptr().add(self.l2s_offset) }

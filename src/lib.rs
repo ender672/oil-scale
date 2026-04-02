@@ -45,7 +45,7 @@ pub mod jpeg_ffi;
 
 pub(crate) mod srgb;
 pub(crate) mod kernel;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
 pub(crate) mod sse2;
 
 pub use colorspace::ColorSpace;

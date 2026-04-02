@@ -16,6 +16,7 @@ default = ["png", "jpeg"]
 png = ["dep:png"]
 jpeg = ["dep:jpeg-decoder", "dep:jpeg-encoder"]
 jpeg-turbo = ["dep:libc", "dep:cc"]
+force-scalar = []
 
 [dependencies]
 jpeg-decoder = { version = "0.3", optional = true }

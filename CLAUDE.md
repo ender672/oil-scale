@@ -18,6 +18,9 @@ cargo test
 # Run tests without default features
 cargo test --no-default-features
 
+# Run tests using scalar (non-SIMD) code paths on x86_64
+cargo test --features force-scalar
+
 # Run imgscale CLI
 cargo run --release --bin imgscale -- WIDTH HEIGHT input.jpg [output.jpg]
 
