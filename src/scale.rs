@@ -711,11 +711,6 @@ impl OilScale {
             return Err(Error::InvalidArgument);
         }
 
-        // Reject unsupported color spaces early instead of panicking later
-        if cs.components() == 0 {
-            return Err(Error::InvalidArgument);
-        }
-
         // Ensure tables are initialized
         srgb::tables();
 
