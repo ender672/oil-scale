@@ -40,12 +40,12 @@ cargo run --release --bin benchmark -- image.png
 - `src/srgb.rs` -- sRGB gamma conversion lookup tables
 - `src/png.rs` -- PNG decode/resize/encode (`resize_png`, `resize_png_file`, `png_dimensions`)
 - `src/jpeg.rs` -- pure Rust JPEG decode/resize/encode (`resize_jpeg`, `fix_ratio`)
-- `src/jpeg_ffi.rs` -- libjpeg-turbo FFI bindings (feature-gated on `ffi`)
+- `src/jpeg_ffi.rs` -- libjpeg-turbo FFI bindings (feature-gated on `jpeg-turbo`)
 - `src/sse2.rs` -- x86_64 SSE2 SIMD optimizations
 - `src/bin/imgscale.rs` -- CLI image resizing tool
 - `src/bin/benchmark.rs` -- performance benchmarking tool
 - `csrc/jpeg_glue.c` -- C FFI glue for libjpeg-turbo
-- `build.rs` -- compiles C FFI and links libjpeg when `ffi` feature is enabled
+- `build.rs` -- compiles C FFI and links libjpeg when `jpeg-turbo` feature is enabled
 
 ## Key design decisions
 
@@ -58,8 +58,10 @@ cargo run --release --bin benchmark -- image.png
 
 ## Features (Cargo)
 
-- `ffi` (default) -- enables libjpeg-turbo FFI via `jpeg_ffi` module. Requires libjpeg-turbo dev headers on the system.
-- Without `ffi` -- pure Rust only, no system dependencies needed.
+- `png` (default) -- PNG decode/resize/encode via `oil::png`
+- `jpeg` (default) -- JPEG decode/resize/encode via `oil::jpeg`
+- `jpeg-turbo` -- enables libjpeg-turbo FFI via `jpeg_ffi` module. Requires libjpeg-turbo dev headers on the system.
+- Without default features -- core scaler only, no codec dependencies.
 
 ## Conventions
 
