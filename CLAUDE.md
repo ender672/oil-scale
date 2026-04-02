@@ -33,7 +33,3 @@ cargo run --release --bin benchmark -- image.png
 - **Premultiplied alpha**: RGB channels are premultiplied by alpha before interpolation, then unpremultiplied on output.
 - **Adaptive kernel width**: downscaling widens the kernel to cover all input pixels and prevent aliasing. Taps = `4 * (in_dim / out_dim)`, always even.
 - **Dimension constraint**: both dimensions must scale in the same direction (both up or both down). Range: 1 to 1,000,000.
-
-## Conventions
-
-- JPEG quality in `imgscale` is hardcoded to 94.
