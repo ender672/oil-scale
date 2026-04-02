@@ -720,6 +720,37 @@ impl OilScale {
         Ok(os)
     }
 
+    /// Returns the input image height in pixels.
+    pub fn input_height(&self) -> u32 {
+        self.in_height
+    }
+
+    /// Returns the output image height in pixels.
+    pub fn output_height(&self) -> u32 {
+        self.out_height
+    }
+
+    /// Returns the input image width in pixels.
+    pub fn input_width(&self) -> u32 {
+        self.in_width
+    }
+
+    /// Returns the output image width in pixels.
+    pub fn output_width(&self) -> u32 {
+        self.out_width
+    }
+
+    /// Returns the color space used by this scaler.
+    pub fn color_space(&self) -> ColorSpace {
+        self.cs
+    }
+
+    /// Returns `true` if this scaler is upscaling (output dimensions larger
+    /// than input dimensions).
+    pub fn is_upscale(&self) -> bool {
+        self.is_upscale
+    }
+
     fn upscale_init(&mut self) {
         let cmp = self.cs.components();
         let coeffs_x_len = TAPS * self.out_width.max(self.in_width) as usize;
