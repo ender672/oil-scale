@@ -39,6 +39,8 @@ cargo test --no-default-features
 
 ## Benchmarking
 
+Input must be an 8-bit RGBA PNG.
+
 ```sh
 cargo run --release --bin benchmark -- image.png
 cargo run --release --bin benchmark -- --down image.png    # downscale only
