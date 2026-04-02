@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! Fast, streaming image resizer with sRGB-correct interpolation and low
 //! memory usage.
 //!
@@ -27,17 +29,25 @@
 //! Enable the `png` and `jpeg` cargo features (on by default) for built-in
 //! codec helpers, or use the core scaler alone with `--no-default-features`.
 
+/// Color space definitions used by the scaler.
 pub mod colorspace;
+/// sRGB ↔ linear lookup tables.
 pub mod srgb;
+/// Interpolation kernel helpers.
 pub mod kernel;
+/// Core streaming scaler.
 pub mod scale;
 #[cfg(feature = "jpeg")]
+/// JPEG codec helpers.
 pub mod jpeg;
 #[cfg(feature = "png")]
+/// PNG codec helpers.
 pub mod png;
 #[cfg(feature = "jpeg-turbo")]
+/// libjpeg-turbo FFI bindings.
 pub mod jpeg_ffi;
 #[cfg(target_arch = "x86_64")]
+/// SSE2-accelerated scaling routines.
 pub mod sse2;
 
 pub use colorspace::ColorSpace;

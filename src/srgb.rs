@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 const L2S_ALL_LEN: usize = 32768;
 
+/// Precomputed lookup tables for sRGB ↔ linear conversions.
 pub struct SrgbTables {
     /// sRGB byte -> linear float (gamma decompression)
     pub s2l: [f32; 256],
@@ -83,6 +84,7 @@ impl SrgbTables {
 
 static TABLES: OnceLock<SrgbTables> = OnceLock::new();
 
+/// Return the global sRGB lookup tables, initializing them on first call.
 pub fn tables() -> &'static SrgbTables {
     TABLES.get_or_init(SrgbTables::build)
 }

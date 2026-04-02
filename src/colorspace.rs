@@ -1,5 +1,7 @@
+/// Pixel format understood by [`OilScale`](crate::OilScale).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {
+    /// Placeholder for uninitialized or unsupported formats.
     Unknown,
     /// Greyscale — no sRGB gamma conversion
     G,

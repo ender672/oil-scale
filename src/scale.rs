@@ -7,9 +7,13 @@ use crate::sse2;
 const MAX_DIMENSION: u32 = 1_000_000;
 const TAPS: usize = 4;
 
+/// Errors returned by [`OilScale`] operations.
 #[derive(Debug)]
 pub enum OilError {
+    /// A parameter was out of range or otherwise invalid (e.g. zero dimensions,
+    /// dimensions exceeding the 1,000,000 limit, or mismatched scale directions).
     InvalidArgument,
+    /// An internal buffer allocation failed.
     AllocationFailed,
 }
 
@@ -24,6 +28,7 @@ impl std::fmt::Display for OilError {
 
 impl std::error::Error for OilError {}
 
+/// Streaming image scaler that processes one scanline at a time.
 pub struct OilScale {
     in_height: u32,
     out_height: u32,
@@ -658,6 +663,7 @@ fn scale_down_cmyk(
 }
 
 impl OilScale {
+    /// Create a new scaler for the given input/output dimensions and color space.
     pub fn new(
         in_height: u32,
         out_height: u32,
