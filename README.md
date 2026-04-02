@@ -39,7 +39,7 @@ cargo test --no-default-features
 
 ## Benchmarking
 
-Input must be an 8-bit RGBA PNG.
+Input must be an 8-bit RGBA PNG. Use an image at least 100x100 pixels — the benchmark scales down to 1% of the original size, so very small images will fail.
 
 ```sh
 cargo run --release --bin benchmark -- image.png
