@@ -21,13 +21,13 @@ fn jcs_to_colorspace(jcs: libc::c_int) -> Result<ColorSpace, Error> {
     }
 }
 
-fn colorspace_to_jcs(cs: ColorSpace) -> libc::c_int {
+fn colorspace_to_jcs(cs: ColorSpace) -> Result<libc::c_int, Error> {
     match cs {
-        ColorSpace::G => JCS_GRAYSCALE,
-        ColorSpace::RGB => JCS_RGB,
-        ColorSpace::CMYK => JCS_CMYK,
-        ColorSpace::RGBX => JCS_EXT_RGBX,
-        _ => JCS_RGB,
+        ColorSpace::G => Ok(JCS_GRAYSCALE),
+        ColorSpace::RGB => Ok(JCS_RGB),
+        ColorSpace::CMYK => Ok(JCS_CMYK),
+        ColorSpace::RGBX => Ok(JCS_EXT_RGBX),
+        _ => Err(Error::InvalidArgument),
     }
 }
 
@@ -76,7 +76,7 @@ impl JpegReader {
     }
 
     fn from_path(path: &Path) -> Result<Self, Error> {
-        let c_path = CString::new(path.as_os_str().as_encoded_bytes())
+        let c_path = CString::new(path.to_str().ok_or(Error::InvalidArgument)?)
             .map_err(|_| Error::InvalidArgument)?;
         let ptr = unsafe { oil_jpeg_reader_create_file(c_path.as_ptr()) };
         if ptr.is_null() {
@@ -155,7 +155,7 @@ impl Drop for JpegWriter {
 
 /// Read JPEG dimensions from a file without decoding pixel data.
 pub fn jpeg_dimensions_file(path: &Path) -> Result<(u32, u32), Error> {
-    let c_path = CString::new(path.as_os_str().as_encoded_bytes())
+    let c_path = CString::new(path.to_str().ok_or(Error::InvalidArgument)?)
         .map_err(|_| Error::InvalidArgument)?;
     let mut width: libc::c_uint = 0;
     let mut height: libc::c_uint = 0;
@@ -191,7 +191,7 @@ pub fn resize_jpeg_file(
     let mut inbuf = vec![0u8; in_stride];
     let mut outbuf = vec![0u8; out_stride];
 
-    let mut writer = JpegWriter::new(out_width, out_height, cmp, colorspace_to_jcs(cs), quality)?;
+    let mut writer = JpegWriter::new(out_width, out_height, cmp, colorspace_to_jcs(cs)?, quality)?;
 
     for _ in 0..out_height {
         while scaler.slots() > 0 {
@@ -229,7 +229,7 @@ pub fn resize_jpeg(
     let mut inbuf = vec![0u8; in_stride];
     let mut outbuf = vec![0u8; out_stride];
 
-    let mut writer = JpegWriter::new(out_width, out_height, cmp, colorspace_to_jcs(cs), quality)?;
+    let mut writer = JpegWriter::new(out_width, out_height, cmp, colorspace_to_jcs(cs)?, quality)?;
 
     for _ in 0..out_height {
         while scaler.slots() > 0 {

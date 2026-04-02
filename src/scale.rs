@@ -50,6 +50,7 @@ impl From<std::io::Error> for Error {
 }
 
 /// Streaming image scaler that processes one scanline at a time.
+#[derive(Debug)]
 pub struct OilScale {
     in_height: u32,
     out_height: u32,
