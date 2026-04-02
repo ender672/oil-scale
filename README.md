@@ -12,7 +12,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oil = { path = "../oil-resize-rs" }
+oil = "0.1"
 ```
 
 ### High-level API
