@@ -10,4 +10,4 @@ pub mod jpeg_ffi;
 pub mod sse2;
 
 pub use colorspace::ColorSpace;
-pub use scale::{OilScale, OilError};
+pub use scale::{OilScale, OilError, fix_ratio};

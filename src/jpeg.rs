@@ -1,6 +1,9 @@
 use crate::colorspace::ColorSpace;
 use crate::scale::{OilError, OilScale};
 
+// Re-export fix_ratio for backwards compatibility
+pub use crate::scale::fix_ratio;
+
 /// Decode a JPEG from bytes, resize it, and re-encode as JPEG.
 pub fn resize_jpeg(
     input: &[u8],
@@ -53,30 +56,4 @@ pub fn resize_jpeg(
         .map_err(|_| OilError::AllocationFailed)?;
 
     Ok(buf)
-}
-
-/// Adjust output dimensions to maintain the input aspect ratio, fitting within
-/// the given bounding box.
-pub fn fix_ratio(
-    src_width: u32,
-    src_height: u32,
-    out_width: &mut u32,
-    out_height: &mut u32,
-) -> Result<(), OilError> {
-    if src_width < 1 || src_height < 1 || *out_width < 1 || *out_height < 1 {
-        return Err(OilError::InvalidArgument);
-    }
-
-    let width_ratio = *out_width as f64 / src_width as f64;
-    let height_ratio = *out_height as f64 / src_height as f64;
-
-    if width_ratio < height_ratio {
-        let tmp = (width_ratio * src_height as f64).round();
-        *out_height = if tmp < 1.0 { 1 } else { tmp as u32 };
-    } else {
-        let tmp = (height_ratio * src_width as f64).round();
-        *out_width = if tmp < 1.0 { 1 } else { tmp as u32 };
-    }
-
-    Ok(())
 }

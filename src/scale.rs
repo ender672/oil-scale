@@ -1173,6 +1173,35 @@ impl OilScale {
         self.in_pos += 1;
     }
 
+}
+
+/// Adjust output dimensions to maintain the input aspect ratio, fitting within
+/// the given bounding box.
+pub fn fix_ratio(
+    src_width: u32,
+    src_height: u32,
+    out_width: &mut u32,
+    out_height: &mut u32,
+) -> Result<(), OilError> {
+    if src_width < 1 || src_height < 1 || *out_width < 1 || *out_height < 1 {
+        return Err(OilError::InvalidArgument);
+    }
+
+    let width_ratio = *out_width as f64 / src_width as f64;
+    let height_ratio = *out_height as f64 / src_height as f64;
+
+    if width_ratio < height_ratio {
+        let tmp = (width_ratio * src_height as f64).round();
+        *out_height = if tmp < 1.0 { 1 } else { tmp as u32 };
+    } else {
+        let tmp = (height_ratio * src_width as f64).round();
+        *out_width = if tmp < 1.0 { 1 } else { tmp as u32 };
+    }
+
+    Ok(())
+}
+
+impl OilScale {
     fn down_scale_out(&mut self, output: &mut [u8]) {
         let cmp = self.cs.components();
         let sl_len = self.out_width as usize * cmp;
