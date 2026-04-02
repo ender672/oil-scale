@@ -7,26 +7,51 @@ use crate::sse2;
 const MAX_DIMENSION: u32 = 1_000_000;
 const TAPS: usize = 4;
 
-/// Errors returned by [`OilScale`] operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OilError {
+/// Errors returned by `oil-scale` operations.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Error {
     /// A parameter was out of range or otherwise invalid (e.g. zero dimensions,
     /// dimensions exceeding the 1,000,000 limit, or mismatched scale directions).
     InvalidArgument,
     /// An internal buffer allocation failed.
     AllocationFailed,
+    /// An I/O operation failed.
+    Io(std::io::Error),
+    /// An image codec operation failed (encoding or decoding).
+    Codec(Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl std::fmt::Display for OilError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OilError::InvalidArgument => write!(f, "invalid argument"),
-            OilError::AllocationFailed => write!(f, "allocation failed"),
+            Error::InvalidArgument => write!(f, "invalid argument"),
+            Error::AllocationFailed => write!(f, "allocation failed"),
+            Error::Io(e) => write!(f, "I/O error: {e}"),
+            Error::Codec(e) => write!(f, "codec error: {e}"),
         }
     }
 }
 
-impl std::error::Error for OilError {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Io(e) => Some(e),
+            Error::Codec(e) => Some(&**e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+/// Deprecated alias for [`Error`].
+#[deprecated(since = "0.2.0", note = "renamed to `Error`")]
+pub type OilError = Error;
 
 /// Streaming image scaler that processes one scanline at a time.
 pub struct OilScale {
@@ -670,7 +695,7 @@ impl OilScale {
         out_width: u32,
         out_height: u32,
         cs: ColorSpace,
-    ) -> Result<Self, OilError> {
+    ) -> Result<Self, Error> {
         if in_height < 1
             || out_height < 1
             || in_width < 1
@@ -680,19 +705,19 @@ impl OilScale {
             || in_width > MAX_DIMENSION
             || out_width > MAX_DIMENSION
         {
-            return Err(OilError::InvalidArgument);
+            return Err(Error::InvalidArgument);
         }
 
         // Only allow upscaling if both dimensions are being upscaled
         if (out_height > in_height) != (out_width > in_width) {
-            return Err(OilError::InvalidArgument);
+            return Err(Error::InvalidArgument);
         }
 
         // Reject unsupported color spaces early instead of panicking later
         match cs {
             ColorSpace::G | ColorSpace::GA | ColorSpace::RGB
             | ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK => {}
-            _ => return Err(OilError::InvalidArgument),
+            _ => return Err(Error::InvalidArgument),
         }
 
         // Ensure tables are initialized
@@ -1226,9 +1251,9 @@ pub fn fix_ratio(
     src_height: u32,
     out_width: &mut u32,
     out_height: &mut u32,
-) -> Result<(), OilError> {
+) -> Result<(), Error> {
     if src_width < 1 || src_height < 1 || *out_width < 1 || *out_height < 1 {
-        return Err(OilError::InvalidArgument);
+        return Err(Error::InvalidArgument);
     }
 
     let width_ratio = *out_width as f64 / src_width as f64;

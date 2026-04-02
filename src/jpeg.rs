@@ -1,5 +1,5 @@
 use crate::colorspace::ColorSpace;
-use crate::scale::{OilError, OilScale};
+use crate::scale::{Error, OilScale};
 
 /// Decode a JPEG from bytes, resize it, and re-encode as JPEG.
 pub fn resize_jpeg(
@@ -7,10 +7,10 @@ pub fn resize_jpeg(
     out_width: u32,
     out_height: u32,
     quality: u8,
-) -> Result<Vec<u8>, OilError> {
+) -> Result<Vec<u8>, Error> {
     let mut decoder = jpeg_decoder::Decoder::new(input);
-    let pixels = decoder.decode().map_err(|_| OilError::InvalidArgument)?;
-    let info = decoder.info().ok_or(OilError::InvalidArgument)?;
+    let pixels = decoder.decode().map_err(|e| Error::Codec(e.into()))?;
+    let info = decoder.info().ok_or(Error::Codec("missing JPEG info".into()))?;
 
     let in_width = info.width as u32;
     let in_height = info.height as u32;
@@ -19,7 +19,7 @@ pub fn resize_jpeg(
         jpeg_decoder::PixelFormat::L8 => ColorSpace::G,
         jpeg_decoder::PixelFormat::RGB24 => ColorSpace::RGB,
         jpeg_decoder::PixelFormat::CMYK32 => ColorSpace::CMYK,
-        _ => return Err(OilError::InvalidArgument),
+        _ => return Err(Error::InvalidArgument),
     };
     let cmp = cs.components();
 
@@ -43,14 +43,14 @@ pub fn resize_jpeg(
         ColorSpace::G => jpeg_encoder::ColorType::Luma,
         ColorSpace::RGB => jpeg_encoder::ColorType::Rgb,
         ColorSpace::CMYK => jpeg_encoder::ColorType::Cmyk,
-        _ => return Err(OilError::InvalidArgument),
+        _ => return Err(Error::InvalidArgument),
     };
 
     let mut buf = Vec::new();
     let encoder = jpeg_encoder::Encoder::new(&mut buf, quality);
     encoder
         .encode(&output, out_width as u16, out_height as u16, enc_color_type)
-        .map_err(|_| OilError::AllocationFailed)?;
+        .map_err(|e| Error::Codec(e.into()))?;
 
     Ok(buf)
 }

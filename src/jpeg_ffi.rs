@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::path::Path;
 
 use crate::colorspace::ColorSpace;
-use crate::scale::{OilError, OilScale};
+use crate::scale::{Error, OilScale};
 
 // libjpeg J_COLOR_SPACE constants.
 const JCS_GRAYSCALE: libc::c_int = 1;
@@ -11,13 +11,13 @@ const JCS_CMYK: libc::c_int = 4;
 const JCS_EXT_RGBX: libc::c_int = 7;
 const JCS_EXT_BGRX: libc::c_int = 9;
 
-fn jcs_to_colorspace(jcs: libc::c_int) -> Result<ColorSpace, OilError> {
+fn jcs_to_colorspace(jcs: libc::c_int) -> Result<ColorSpace, Error> {
     match jcs {
         JCS_GRAYSCALE => Ok(ColorSpace::G),
         JCS_RGB => Ok(ColorSpace::RGB),
         JCS_CMYK => Ok(ColorSpace::CMYK),
         JCS_EXT_RGBX | JCS_EXT_BGRX => Ok(ColorSpace::RGBX),
-        _ => Err(OilError::InvalidArgument),
+        _ => Err(Error::InvalidArgument),
     }
 }
 
@@ -67,20 +67,20 @@ struct JpegReader {
 }
 
 impl JpegReader {
-    fn new(data: &[u8]) -> Result<Self, OilError> {
+    fn new(data: &[u8]) -> Result<Self, Error> {
         let ptr = unsafe { oil_jpeg_reader_create(data.as_ptr(), data.len() as libc::c_ulong) };
         if ptr.is_null() {
-            return Err(OilError::AllocationFailed);
+            return Err(Error::AllocationFailed);
         }
         Ok(Self { ptr })
     }
 
-    fn from_path(path: &Path) -> Result<Self, OilError> {
+    fn from_path(path: &Path) -> Result<Self, Error> {
         let c_path = CString::new(path.as_os_str().as_encoded_bytes())
-            .map_err(|_| OilError::InvalidArgument)?;
+            .map_err(|_| Error::InvalidArgument)?;
         let ptr = unsafe { oil_jpeg_reader_create_file(c_path.as_ptr()) };
         if ptr.is_null() {
-            return Err(OilError::InvalidArgument);
+            return Err(Error::InvalidArgument);
         }
         Ok(Self { ptr })
     }
@@ -114,12 +114,12 @@ struct JpegWriter {
 }
 
 impl JpegWriter {
-    fn new(width: u32, height: u32, components: usize, color_space: libc::c_int, quality: u8) -> Result<Self, OilError> {
+    fn new(width: u32, height: u32, components: usize, color_space: libc::c_int, quality: u8) -> Result<Self, Error> {
         let ptr = unsafe {
             oil_jpeg_writer_create(width, height, components as libc::c_int, color_space, quality as libc::c_int)
         };
         if ptr.is_null() {
-            return Err(OilError::AllocationFailed);
+            return Err(Error::AllocationFailed);
         }
         Ok(Self { ptr })
     }
@@ -128,11 +128,11 @@ impl JpegWriter {
         unsafe { oil_jpeg_writer_write_scanline(self.ptr, buf.as_mut_ptr()) }
     }
 
-    fn finish(self) -> Result<Vec<u8>, OilError> {
+    fn finish(self) -> Result<Vec<u8>, Error> {
         let mut size: libc::c_ulong = 0;
         let buf = unsafe { oil_jpeg_writer_finish(self.ptr, &mut size) };
         if buf.is_null() {
-            return Err(OilError::AllocationFailed);
+            return Err(Error::AllocationFailed);
         }
         let result = unsafe { std::slice::from_raw_parts(buf, size as usize) }.to_vec();
         unsafe { oil_jpeg_free_buf(buf) };
@@ -154,14 +154,14 @@ impl Drop for JpegWriter {
 }
 
 /// Read JPEG dimensions from a file without decoding pixel data.
-pub fn jpeg_dimensions_file(path: &Path) -> Result<(u32, u32), OilError> {
+pub fn jpeg_dimensions_file(path: &Path) -> Result<(u32, u32), Error> {
     let c_path = CString::new(path.as_os_str().as_encoded_bytes())
-        .map_err(|_| OilError::InvalidArgument)?;
+        .map_err(|_| Error::InvalidArgument)?;
     let mut width: libc::c_uint = 0;
     let mut height: libc::c_uint = 0;
     let ret = unsafe { oil_jpeg_dimensions_file(c_path.as_ptr(), &mut width, &mut height) };
     if ret != 0 {
-        return Err(OilError::InvalidArgument);
+        return Err(Error::InvalidArgument);
     }
     Ok((width, height))
 }
@@ -174,7 +174,7 @@ pub fn resize_jpeg_file(
     out_width: u32,
     out_height: u32,
     quality: u8,
-) -> Result<Vec<u8>, OilError> {
+) -> Result<Vec<u8>, Error> {
     let mut reader = JpegReader::from_path(path)?;
 
     let in_width = reader.width();
@@ -212,7 +212,7 @@ pub fn resize_jpeg(
     out_width: u32,
     out_height: u32,
     quality: u8,
-) -> Result<Vec<u8>, OilError> {
+) -> Result<Vec<u8>, Error> {
     let mut reader = JpegReader::new(input)?;
 
     let in_width = reader.width();

@@ -49,4 +49,8 @@ pub(crate) mod kernel;
 pub(crate) mod sse2;
 
 pub use colorspace::ColorSpace;
-pub use scale::{OilScale, OilError, fix_ratio};
+pub use scale::{OilScale, Error, fix_ratio};
+
+/// Deprecated alias for [`Error`].
+#[deprecated(since = "0.2.0", note = "renamed to `Error`")]
+pub type OilError = Error;

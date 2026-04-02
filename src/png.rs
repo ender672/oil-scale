@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::colorspace::ColorSpace;
-use crate::scale::{OilError, OilScale};
+use crate::scale::{Error, OilScale};
 
 /// Decode an RGB PNG from `input`, resize to `out_width` x `out_height`,
 /// and re-encode as PNG, returning the result as bytes.
@@ -9,12 +9,12 @@ pub fn resize_png(
     input: &[u8],
     out_width: u32,
     out_height: u32,
-) -> Result<Vec<u8>, OilError> {
+) -> Result<Vec<u8>, Error> {
     let mut decoder = png::Decoder::new(input);
     // Match C implementation: expand palette to RGB, sub-8-bit gray to 8-bit,
     // strip 16-bit to 8-bit, and handle tRNS as alpha.
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(|_| OilError::InvalidArgument)?;
+    let mut reader = decoder.read_info().map_err(|e| Error::Codec(e.into()))?;
     let info = reader.info();
     let in_width = info.width;
     let in_height = info.height;
@@ -25,7 +25,7 @@ pub fn resize_png(
         png::ColorType::GrayscaleAlpha => ColorSpace::GA,
         png::ColorType::Rgb => ColorSpace::RGB,
         png::ColorType::Rgba => ColorSpace::RGBA,
-        _ => return Err(OilError::InvalidArgument),
+        _ => return Err(Error::InvalidArgument),
     };
     let cmp = cs.components();
 
@@ -42,7 +42,7 @@ pub fn resize_png(
     if interlaced {
         // Read entire image into memory
         let mut full_buf = vec![0u8; reader.output_buffer_size()];
-        reader.next_frame(&mut full_buf).map_err(|_| OilError::InvalidArgument)?;
+        reader.next_frame(&mut full_buf).map_err(|e| Error::Codec(e.into()))?;
 
         let mut in_line = 0usize;
         for i in 0..out_height as usize {
@@ -59,8 +59,8 @@ pub fn resize_png(
         for i in 0..out_height as usize {
             while scaler.slots() > 0 {
                 let row = reader.next_row()
-                    .map_err(|_| OilError::InvalidArgument)?
-                    .ok_or(OilError::InvalidArgument)?;
+                    .map_err(|e| Error::Codec(e.into()))?
+                    .ok_or(Error::Codec("unexpected end of PNG data".into()))?;
                 row_buf.copy_from_slice(row.data());
                 scaler.push_scanline(&row_buf);
             }
@@ -80,8 +80,8 @@ pub fn resize_png(
         };
         encoder.set_color(out_color);
         encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|_| OilError::AllocationFailed)?;
-        writer.write_image_data(&output).map_err(|_| OilError::AllocationFailed)?;
+        let mut writer = encoder.write_header().map_err(|e| Error::Codec(e.into()))?;
+        writer.write_image_data(&output).map_err(|e| Error::Codec(e.into()))?;
     }
 
     Ok(result)
@@ -93,17 +93,17 @@ pub fn resize_png_file(
     out_width: u32,
     out_height: u32,
     output_path: &Path,
-) -> Result<(), OilError> {
-    let input_data = std::fs::read(input_path).map_err(|_| OilError::InvalidArgument)?;
+) -> Result<(), Error> {
+    let input_data = std::fs::read(input_path)?;
     let encoded = resize_png(&input_data, out_width, out_height)?;
-    std::fs::write(output_path, &encoded).map_err(|_| OilError::AllocationFailed)?;
+    std::fs::write(output_path, &encoded)?;
     Ok(())
 }
 
 /// Read the dimensions of a PNG file without decoding pixel data.
-pub fn png_dimensions(input: &[u8]) -> Result<(u32, u32), OilError> {
+pub fn png_dimensions(input: &[u8]) -> Result<(u32, u32), Error> {
     let decoder = png::Decoder::new(input);
-    let reader = decoder.read_info().map_err(|_| OilError::InvalidArgument)?;
+    let reader = decoder.read_info().map_err(|e| Error::Codec(e.into()))?;
     let info = reader.info();
     Ok((info.width, info.height))
 }
