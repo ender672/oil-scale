@@ -1,4 +1,4 @@
-# oil
+# oil-scale
 
 A high-speed, low-memory, high-quality image resizing library written in Rust.
 
@@ -12,7 +12,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oil = "0.1"
+oil-scale = "0.1"
 ```
 
 ### High-level API
@@ -20,7 +20,7 @@ oil = "0.1"
 Resize an entire PNG or JPEG in one call:
 
 ```rust
-use oil::png::resize_png;
+use oil_scale::png::resize_png;
 
 let input = std::fs::read("input.png").unwrap();
 let resized = resize_png(&input, 200, 150).unwrap();
@@ -28,7 +28,7 @@ std::fs::write("output.png", &resized).unwrap();
 ```
 
 ```rust
-use oil::jpeg::resize_jpeg;
+use oil_scale::jpeg::resize_jpeg;
 
 let input = std::fs::read("input.jpg").unwrap();
 let resized = resize_jpeg(&input, 200, 150, 90).unwrap();
@@ -38,7 +38,7 @@ std::fs::write("output.jpg", &resized).unwrap();
 Use `fix_ratio` to preserve aspect ratio within a bounding box:
 
 ```rust
-use oil::fix_ratio;
+use oil_scale::fix_ratio;
 
 let (mut out_w, mut out_h) = (200, 200);
 fix_ratio(1920, 1080, &mut out_w, &mut out_h).unwrap();
@@ -50,7 +50,7 @@ fix_ratio(1920, 1080, &mut out_w, &mut out_h).unwrap();
 Use `OilScale` directly when you have your own decoder/encoder. Feed input scanlines one at a time and read output scanlines as they become available:
 
 ```rust
-use oil::{OilScale, ColorSpace};
+use oil_scale::{OilScale, ColorSpace};
 
 let (in_w, in_h) = (1920, 1080);
 let (out_w, out_h) = (480, 270);
@@ -85,24 +85,24 @@ for i in 0..out_h as usize {
 
 | Feature | Default | Description |
 |---|---|---|
-| `png` | yes | PNG decode/resize/encode via `oil::png` |
-| `jpeg` | yes | JPEG decode/resize/encode via `oil::jpeg` |
-| `jpeg-turbo` | no | libjpeg-turbo FFI via `oil::jpeg_ffi` (requires system headers) |
+| `png` | yes | PNG decode/resize/encode via `oil_scale::png` |
+| `jpeg` | yes | JPEG decode/resize/encode via `oil_scale::jpeg` |
+| `jpeg-turbo` | no | libjpeg-turbo FFI via `oil_scale::jpeg_ffi` (requires system headers) |
 
 With no features enabled, you get the core scaler (`OilScale`, `ColorSpace`, `fix_ratio`) and no codec dependencies.
 
 ```toml
 # Default (png + jpeg adapters)
-oil = "0.1"
+oil-scale = "0.1"
 
 # Core scaler only — bring your own decoder/encoder
-oil = { version = "0.1", default-features = false }
+oil-scale = { version = "0.1", default-features = false }
 
 # Just PNG support
-oil = { version = "0.1", default-features = false, features = ["png"] }
+oil-scale = { version = "0.1", default-features = false, features = ["png"] }
 
 # Everything including FFI
-oil = { version = "0.1", features = ["jpeg-turbo"] }
+oil-scale = { version = "0.1", features = ["jpeg-turbo"] }
 ```
 
 ### Command-line tool

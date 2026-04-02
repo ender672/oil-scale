@@ -1,6 +1,6 @@
 #![cfg(feature = "png")]
 
-use oil::png::{resize_png, png_dimensions};
+use oil_scale::png::{resize_png, png_dimensions};
 
 /// Create a minimal PNG in memory with the given dimensions, color type, and pixel data.
 fn make_png(width: u32, height: u32, color_type: png::ColorType, pixels: &[u8]) -> Vec<u8> {

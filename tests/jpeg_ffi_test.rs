@@ -1,6 +1,6 @@
 #![cfg(feature = "jpeg-turbo")]
 
-use oil::jpeg_ffi;
+use oil_scale::jpeg_ffi;
 
 /// Encode a minimal grayscale JPEG from raw pixel data.
 fn make_grayscale_jpeg(width: u16, height: u16, pixels: &[u8]) -> Vec<u8> {

@@ -1,5 +1,5 @@
-use oil::ColorSpace;
-use oil::OilScale;
+use oil_scale::ColorSpace;
+use oil_scale::OilScale;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::sync::Mutex;

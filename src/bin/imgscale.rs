@@ -66,15 +66,15 @@ fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path:
     #[cfg(feature = "jpeg-turbo")]
     let encoded = {
         let path = Path::new(input_path);
-        let (src_w, src_h) = oil::jpeg_ffi::jpeg_dimensions_file(path).unwrap_or_else(|e| {
+        let (src_w, src_h) = oil_scale::jpeg_ffi::jpeg_dimensions_file(path).unwrap_or_else(|e| {
             eprintln!("Unable to read JPEG header: {:?}", e);
             process::exit(1);
         });
-        oil::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
+        oil_scale::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
             eprintln!("Error adjusting aspect ratio: {:?}", e);
             process::exit(1);
         });
-        oil::jpeg_ffi::resize_jpeg_file(path, *width, *height, 94)
+        oil_scale::jpeg_ffi::resize_jpeg_file(path, *width, *height, 94)
     };
 
     #[cfg(not(feature = "jpeg-turbo"))]
@@ -89,12 +89,12 @@ fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path:
             process::exit(1);
         });
         let info = decoder.info().unwrap();
-        oil::jpeg::fix_ratio(info.width as u32, info.height as u32, width, height)
+        oil_scale::jpeg::fix_ratio(info.width as u32, info.height as u32, width, height)
             .unwrap_or_else(|e| {
                 eprintln!("Error adjusting aspect ratio: {:?}", e);
                 process::exit(1);
             });
-        oil::jpeg::resize_jpeg(&input_data, *width, *height, 94)
+        oil_scale::jpeg::resize_jpeg(&input_data, *width, *height, 94)
     };
 
     let encoded = encoded.unwrap_or_else(|e| {
@@ -114,17 +114,17 @@ fn resize_png(input_path: &str, width: &mut u32, height: &mut u32, output_path: 
         process::exit(1);
     });
 
-    let (src_w, src_h) = oil::png::png_dimensions(&input_data).unwrap_or_else(|e| {
+    let (src_w, src_h) = oil_scale::png::png_dimensions(&input_data).unwrap_or_else(|e| {
         eprintln!("Unable to read PNG header: {:?}", e);
         process::exit(1);
     });
 
-    oil::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
+    oil_scale::jpeg::fix_ratio(src_w, src_h, width, height).unwrap_or_else(|e| {
         eprintln!("Error adjusting aspect ratio: {:?}", e);
         process::exit(1);
     });
 
-    let encoded = oil::png::resize_png(&input_data, *width, *height).unwrap_or_else(|e| {
+    let encoded = oil_scale::png::resize_png(&input_data, *width, *height).unwrap_or_else(|e| {
         eprintln!("Error resizing image: {:?}", e);
         process::exit(1);
     });
