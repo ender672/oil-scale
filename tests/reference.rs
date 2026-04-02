@@ -1,5 +1,5 @@
 use oil_scale::ColorSpace;
-use oil_scale::OilScale;
+use oil_scale::{OilScale, Error, fix_ratio};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::sync::Mutex;
@@ -536,4 +536,161 @@ fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::RGBA);
     test_scale_catrom_extremes(ColorSpace::RGBX);
     test_scale_catrom_extremes(ColorSpace::CMYK);
+}
+
+// --- Error path and validation tests ---
+
+#[test]
+fn new_rejects_zero_input_width() {
+    assert!(matches!(
+        OilScale::new(0, 100, 50, 50, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+}
+
+#[test]
+fn new_rejects_zero_input_height() {
+    assert!(matches!(
+        OilScale::new(100, 0, 50, 50, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+}
+
+#[test]
+fn new_rejects_zero_output_width() {
+    assert!(matches!(
+        OilScale::new(100, 100, 0, 50, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+}
+
+#[test]
+fn new_rejects_zero_output_height() {
+    assert!(matches!(
+        OilScale::new(100, 100, 50, 0, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+}
+
+#[test]
+fn new_rejects_exceeding_max_dimension() {
+    let over = 1_000_001;
+    assert!(OilScale::new(over, 100, 50, 50, ColorSpace::RGB).is_err());
+    assert!(OilScale::new(100, over, 50, 50, ColorSpace::RGB).is_err());
+    assert!(OilScale::new(100, 100, over, 50, ColorSpace::RGB).is_err());
+    assert!(OilScale::new(100, 100, 50, over, ColorSpace::RGB).is_err());
+}
+
+#[test]
+fn new_rejects_mismatched_scale_direction() {
+    // Upscale width but downscale height
+    assert!(matches!(
+        OilScale::new(100, 100, 200, 50, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+    // Downscale width but upscale height
+    assert!(matches!(
+        OilScale::new(100, 100, 50, 200, ColorSpace::RGB),
+        Err(Error::InvalidArgument)
+    ));
+}
+
+#[test]
+fn new_accepts_identity_scale() {
+    assert!(OilScale::new(100, 100, 100, 100, ColorSpace::RGB).is_ok());
+}
+
+#[test]
+fn new_accepts_max_dimension() {
+    assert!(OilScale::new(1_000_000, 1_000_000, 500_000, 500_000, ColorSpace::G).is_ok());
+}
+
+// --- fix_ratio tests ---
+
+#[test]
+fn fix_ratio_landscape_fit() {
+    // 1000x500 into 100x100 box → width-limited → (100, 50)
+    let (w, h) = fix_ratio(1000, 500, 100, 100).unwrap();
+    assert_eq!(w, 100);
+    assert_eq!(h, 50);
+}
+
+#[test]
+fn fix_ratio_portrait_fit() {
+    // 500x1000 into 100x100 box → height-limited → (50, 100)
+    let (w, h) = fix_ratio(500, 1000, 100, 100).unwrap();
+    assert_eq!(w, 50);
+    assert_eq!(h, 100);
+}
+
+#[test]
+fn fix_ratio_square() {
+    let (w, h) = fix_ratio(200, 200, 50, 50).unwrap();
+    assert_eq!(w, 50);
+    assert_eq!(h, 50);
+}
+
+#[test]
+fn fix_ratio_extreme_aspect() {
+    // Very wide: 10000x1 into 100x100 → (100, 1) since height rounds to minimum 1
+    let (w, h) = fix_ratio(10000, 1, 100, 100).unwrap();
+    assert_eq!(w, 100);
+    assert!(h >= 1);
+}
+
+#[test]
+fn fix_ratio_rejects_zero_dims() {
+    assert!(fix_ratio(0, 100, 50, 50).is_err());
+    assert!(fix_ratio(100, 0, 50, 50).is_err());
+    assert!(fix_ratio(100, 100, 0, 50).is_err());
+    assert!(fix_ratio(100, 100, 50, 0).is_err());
+}
+
+// --- ColorSpace::components tests ---
+
+#[test]
+fn colorspace_components() {
+    assert_eq!(ColorSpace::G.components(), 1);
+    assert_eq!(ColorSpace::GA.components(), 2);
+    assert_eq!(ColorSpace::RGB.components(), 3);
+    assert_eq!(ColorSpace::RGBA.components(), 4);
+    assert_eq!(ColorSpace::RGBX.components(), 4);
+    assert_eq!(ColorSpace::CMYK.components(), 4);
+}
+
+// --- Error Display tests ---
+
+#[test]
+fn error_display() {
+    let e = OilScale::new(0, 0, 0, 0, ColorSpace::RGB).unwrap_err();
+    assert_eq!(format!("{e}"), "invalid argument");
+}
+
+#[test]
+fn error_from_io() {
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+    let e: Error = io_err.into();
+    assert!(format!("{e}").contains("I/O error"));
+    // Test std::error::Error::source()
+    use std::error::Error as StdError;
+    assert!(e.source().is_some());
+}
+
+// --- Accessor tests ---
+
+#[test]
+fn accessors_report_correct_dimensions() {
+    let os = OilScale::new(1920, 1080, 640, 360, ColorSpace::RGBA).unwrap();
+    assert_eq!(os.input_width(), 1920);
+    assert_eq!(os.input_height(), 1080);
+    assert_eq!(os.output_width(), 640);
+    assert_eq!(os.output_height(), 360);
+    assert_eq!(os.color_space(), ColorSpace::RGBA);
+    assert!(!os.is_upscale());
+}
+
+#[test]
+fn accessors_upscale() {
+    let os = OilScale::new(100, 100, 200, 200, ColorSpace::G).unwrap();
+    assert!(os.is_upscale());
 }
