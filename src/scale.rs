@@ -51,6 +51,7 @@ impl From<std::io::Error> for Error {
 
 /// Streaming image scaler that processes one scanline at a time.
 #[derive(Debug)]
+#[must_use]
 pub struct OilScale {
     in_height: u32,
     out_height: u32,
@@ -860,6 +861,11 @@ impl OilScale {
     }
 
     /// Ingest one input scanline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `input.len()` is less than `input_width() * color_space().components()`,
+    /// or if called more times than the input height without a [`reset`](Self::reset).
     pub fn push_scanline(&mut self, input: &[u8]) {
         if self.is_upscale {
             self.up_scale_in(input);
@@ -869,6 +875,11 @@ impl OilScale {
     }
 
     /// Produce the next scaled output scanline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output.len()` is less than `output_width() * color_space().components()`,
+    /// or if called more than `output_height()` times without a [`reset`](Self::reset).
     pub fn read_scanline(&mut self, output: &mut [u8]) {
         if self.is_upscale {
             self.up_scale_out(output);

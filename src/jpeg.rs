@@ -46,10 +46,17 @@ pub fn resize_jpeg(
         _ => return Err(Error::InvalidArgument),
     };
 
+    let enc_width: u16 = out_width
+        .try_into()
+        .map_err(|_| Error::InvalidArgument)?;
+    let enc_height: u16 = out_height
+        .try_into()
+        .map_err(|_| Error::InvalidArgument)?;
+
     let mut buf = Vec::new();
     let encoder = jpeg_encoder::Encoder::new(&mut buf, quality);
     encoder
-        .encode(&output, out_width as u16, out_height as u16, enc_color_type)
+        .encode(&output, enc_width, enc_height, enc_color_type)
         .map_err(|e| Error::Codec(e.into()))?;
 
     Ok(buf)
