@@ -6,13 +6,15 @@ license = "MIT"
 rust-version = "1.65"
 
 [features]
-default = ["ffi"]
-ffi = ["dep:libc", "dep:cc"]
+default = ["png", "jpeg"]
+png = ["dep:png"]
+jpeg = ["dep:jpeg-decoder", "dep:jpeg-encoder"]
+jpeg-turbo = ["dep:libc", "dep:cc"]
 
 [dependencies]
-jpeg-decoder = "0.3"
-jpeg-encoder = "0.6"
-png = "0.17"
+jpeg-decoder = { version = "0.3", optional = true }
+jpeg-encoder = { version = "0.6", optional = true }
+png = { version = "0.17", optional = true }
 libc = { version = "0.2", optional = true }
 
 [build-dependencies]
@@ -28,3 +30,9 @@ debug = true
 [[bin]]
 name = "imgscale"
 path = "src/bin/imgscale.rs"
+required-features = ["png", "jpeg"]
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+required-features = ["jpeg", "png"]

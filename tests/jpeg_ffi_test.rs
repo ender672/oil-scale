@@ -1,4 +1,4 @@
-#![cfg(feature = "ffi")]
+#![cfg(feature = "jpeg-turbo")]
 
 use oil::jpeg_ffi;
 

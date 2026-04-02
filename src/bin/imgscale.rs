@@ -63,7 +63,7 @@ fn main() {
 }
 
 fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path: &str) {
-    #[cfg(feature = "ffi")]
+    #[cfg(feature = "jpeg-turbo")]
     let encoded = {
         let path = Path::new(input_path);
         let (src_w, src_h) = oil::jpeg_ffi::jpeg_dimensions_file(path).unwrap_or_else(|e| {
@@ -77,7 +77,7 @@ fn resize_jpeg(input_path: &str, width: &mut u32, height: &mut u32, output_path:
         oil::jpeg_ffi::resize_jpeg_file(path, *width, *height, 94)
     };
 
-    #[cfg(not(feature = "ffi"))]
+    #[cfg(not(feature = "jpeg-turbo"))]
     let encoded = {
         let input_data = fs::read(input_path).unwrap_or_else(|e| {
             eprintln!("Unable to open source file: {}", e);

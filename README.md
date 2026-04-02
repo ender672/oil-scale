@@ -6,11 +6,104 @@ Oil resizes images using Catmull-Rom cubic interpolation with proper sRGB gamma 
 
 This is a Rust port of the https://github.com/ender672/liboil C library.
 
+## Usage
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+oil = { path = "../oil-resize-rs" }
+```
+
+### High-level API
+
+Resize an entire PNG or JPEG in one call:
+
+```rust
+use oil::png::resize_png;
+
+let input = std::fs::read("input.png").unwrap();
+let resized = resize_png(&input, 200, 150).unwrap();
+std::fs::write("output.png", &resized).unwrap();
+```
+
+```rust
+use oil::jpeg::resize_jpeg;
+
+let input = std::fs::read("input.jpg").unwrap();
+let resized = resize_jpeg(&input, 200, 150, 90).unwrap();
+std::fs::write("output.jpg", &resized).unwrap();
+```
+
+Use `fix_ratio` to preserve aspect ratio within a bounding box:
+
+```rust
+use oil::fix_ratio;
+
+let (mut out_w, mut out_h) = (200, 200);
+fix_ratio(1920, 1080, &mut out_w, &mut out_h).unwrap();
+// out_w=200, out_h=113
+```
+
+### Low-level streaming API
+
+Use `OilScale` directly when you have your own decoder/encoder. Feed input scanlines one at a time and read output scanlines as they become available:
+
+```rust
+use oil::{OilScale, ColorSpace};
+
+let (in_w, in_h) = (1920, 1080);
+let (out_w, out_h) = (480, 270);
+let cs = ColorSpace::RGBA;
+let cmp = cs.components(); // 4
+
+let mut scaler = OilScale::new(in_h, out_h, in_w, out_w, cs).unwrap();
+
+let in_stride = in_w as usize * cmp;
+let out_stride = out_w as usize * cmp;
+let mut output = vec![0u8; out_h as usize * out_stride];
+
+let mut in_line = 0usize;
+for i in 0..out_h as usize {
+    // push_scanline() until slots() returns 0
+    while scaler.slots() > 0 {
+        let scanline = &input_pixels[in_line * in_stride..(in_line + 1) * in_stride];
+        scaler.push_scanline(scanline);
+        in_line += 1;
+    }
+    scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+}
+```
+
 ## Features
 
 - Catmull-Rom interpolation with correct sRGB gamma and premultiplied alpha
-- streaming scanline-by-scanline API; never loads the full image into memory when the decoder allows it
+- Streaming scanline-by-scanline API; never loads the full image into memory when the decoder allows it
 - SSE2 SIMD acceleration on x86_64
+
+### Cargo features
+
+| Feature | Default | Description |
+|---|---|---|
+| `png` | yes | PNG decode/resize/encode via `oil::png` |
+| `jpeg` | yes | JPEG decode/resize/encode via `oil::jpeg` |
+| `jpeg-turbo` | no | libjpeg-turbo FFI via `oil::jpeg_ffi` (requires system headers) |
+
+With no features enabled, you get the core scaler (`OilScale`, `ColorSpace`, `fix_ratio`) and no codec dependencies.
+
+```toml
+# Default (png + jpeg adapters)
+oil = "0.1"
+
+# Core scaler only — bring your own decoder/encoder
+oil = { version = "0.1", default-features = false }
+
+# Just PNG support
+oil = { version = "0.1", default-features = false, features = ["png"] }
+
+# Everything including FFI
+oil = { version = "0.1", features = ["jpeg-turbo"] }
+```
 
 ### Command-line tool
 
@@ -22,16 +115,19 @@ Aspect ratio is preserved automatically. Output path defaults to `output.jpg` or
 
 ## Minimum Supported Rust Version
 
-1.65 (driven by the `libc` dependency when the default `ffi` feature is enabled).
+1.61 with default features. 1.65 when the `jpeg-turbo` feature is enabled (due to `libc`).
 
 ## Building
 
 ```sh
-# Default build (includes libjpeg-turbo FFI support)
+# Default build (png + jpeg, pure Rust)
 cargo build --release
 
-# Without FFI (pure Rust, no system dependencies)
+# Core scaler only, no codec dependencies
 cargo build --release --no-default-features
+
+# With libjpeg-turbo FFI support (requires system headers)
+cargo build --release --features jpeg-turbo
 ```
 
 ## Running tests
@@ -53,3 +149,7 @@ cargo run --release --bin benchmark -- image.png RGB       # specific color spac
 ```
 
 Control iterations with the `OILITERATIONS` environment variable.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

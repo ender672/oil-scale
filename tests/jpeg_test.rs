@@ -1,3 +1,5 @@
+#![cfg(feature = "jpeg")]
+
 use oil::jpeg;
 
 /// Encode a minimal grayscale JPEG from raw pixel data.

@@ -1,3 +1,5 @@
+#![cfg(feature = "png")]
+
 use oil::png::{resize_png, png_dimensions};
 
 /// Create a minimal PNG in memory with the given dimensions, color type, and pixel data.

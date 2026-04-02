@@ -1,5 +1,5 @@
 fn main() {
-    #[cfg(feature = "ffi")]
+    #[cfg(feature = "jpeg-turbo")]
     {
         cc::Build::new()
             .file("csrc/jpeg_glue.c")
