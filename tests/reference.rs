@@ -431,6 +431,103 @@ fn scale_2_to_1() {
     test_scale_all_permutations(&mut rng, 2, 1);
 }
 
+fn do_oil_scale_with_reset(
+    input: &[Vec<u8>],
+    in_width: u32,
+    in_height: u32,
+    out_width: u32,
+    out_height: u32,
+    cs: ColorSpace,
+) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+    let cmp = cs.components();
+    let mut os = OilScale::new(in_width, in_height, out_width, out_height, cs).unwrap();
+
+    // First pass
+    let mut output1: Vec<Vec<u8>> = (0..out_height)
+        .map(|_| vec![0u8; out_width as usize * cmp])
+        .collect();
+    let mut in_line = 0usize;
+    for out_row in output1.iter_mut().take(out_height as usize) {
+        while os.slots() > 0 {
+            os.push_scanline(&input[in_line]);
+            in_line += 1;
+        }
+        os.read_scanline(out_row);
+    }
+
+    // Reset and do second pass with the same input
+    os.reset();
+
+    let mut output2: Vec<Vec<u8>> = (0..out_height)
+        .map(|_| vec![0u8; out_width as usize * cmp])
+        .collect();
+    let mut in_line = 0usize;
+    for out_row in output2.iter_mut().take(out_height as usize) {
+        while os.slots() > 0 {
+            os.push_scanline(&input[in_line]);
+            in_line += 1;
+        }
+        os.read_scanline(out_row);
+    }
+
+    (output1, output2)
+}
+
+fn test_reset_square_rand(rng: &mut StdRng, in_dim: u32, out_dim: u32, cs: ColorSpace) {
+    let cmp = cs.components();
+    let stride = cmp * in_dim as usize;
+
+    let input: Vec<Vec<u8>> = (0..in_dim)
+        .map(|_| {
+            let mut row = vec![0u8; stride];
+            for b in row.iter_mut() {
+                *b = (rng.gen::<u32>() % 256) as u8;
+            }
+            row
+        })
+        .collect();
+
+    let (output1, output2) =
+        do_oil_scale_with_reset(&input, in_dim, in_dim, out_dim, out_dim, cs);
+
+    for i in 0..out_dim as usize {
+        assert_eq!(
+            output1[i], output2[i],
+            "reset: row {} differs for {:?} {}->{}",
+            i, cs, in_dim, out_dim
+        );
+    }
+}
+
+fn test_reset_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::G);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::GA);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RGB);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RGBA);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RGBX);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::CMYK);
+}
+
+#[test]
+fn reset_downscale() {
+    let mut rng = StdRng::seed_from_u64(1531289600);
+    // Various downscale dimensions
+    test_reset_each_cs(&mut rng, 8, 3);
+    test_reset_each_cs(&mut rng, 100, 1);
+    test_reset_each_cs(&mut rng, 100, 99);
+    test_reset_each_cs(&mut rng, 5, 1);
+}
+
+#[test]
+fn reset_upscale() {
+    let mut rng = StdRng::seed_from_u64(1531289601);
+    // Various upscale dimensions
+    test_reset_each_cs(&mut rng, 1, 5);
+    test_reset_each_cs(&mut rng, 3, 8);
+    test_reset_each_cs(&mut rng, 1, 100);
+    test_reset_each_cs(&mut rng, 99, 100);
+}
+
 #[test]
 fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::G);
