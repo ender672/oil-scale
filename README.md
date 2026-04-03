@@ -13,6 +13,12 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 oil-scale = "0.1"
+
+# Or with libjpeg-turbo FFI. Lowest memory use, highest performance. Requires system headers:
+# oil-scale = { version = "0.1", features = ["jpeg-turbo"] }
+
+# Or with no default features (core scaler only — bring your own decoder/encoder):
+# oil-scale = { version = "0.1", default-features = false }
 ```
 
 ### High-level API
@@ -21,56 +27,61 @@ Resize an entire PNG or JPEG in one call:
 
 ```rust
 use oil_scale::png::resize_png;
-
-let input = std::fs::read("input.png").unwrap();
-let resized = resize_png(&input, 200, 150).unwrap();
-std::fs::write("output.png", &resized).unwrap();
-```
-
-```rust
 use oil_scale::jpeg::resize_jpeg;
-
-let input = std::fs::read("input.jpg").unwrap();
-let resized = resize_jpeg(&input, 200, 150, 90).unwrap();
-std::fs::write("output.jpg", &resized).unwrap();
-```
-
-Use `fix_ratio` to preserve aspect ratio within a bounding box:
-
-```rust
 use oil_scale::fix_ratio;
 
-let (out_w, out_h) = fix_ratio(1920, 1080, 200, 200).unwrap();
-// out_w=200, out_h=113
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Resize a PNG to an exact size
+    let input = std::fs::read("photo.png")?;
+    let resized = resize_png(&input, 200, 150)?;
+    std::fs::write("thumb.png", &resized)?;
+
+    // Resize a JPEG (last argument is output quality 0–100)
+    let input = std::fs::read("photo.jpg")?;
+    let resized = resize_jpeg(&input, 200, 150, 90)?;
+    std::fs::write("thumb.jpg", &resized)?;
+
+    // Use fix_ratio to fit within a bounding box while preserving aspect ratio
+    let (out_w, out_h) = fix_ratio(1920, 1080, 200, 200)?;
+    // out_w=200, out_h=113
+    let resized = resize_png(&std::fs::read("wide.png")?, out_w, out_h)?;
+    std::fs::write("wide_thumb.png", &resized)?;
+
+    Ok(())
+}
 ```
 
 ### Low-level streaming API
 
-Use `OilScale` directly when you have your own decoder/encoder. Feed input scanlines one at a time and read output scanlines as they become available:
+Use `OilScale` directly when you have your own decoder/encoder. Feed input
+scanlines one at a time and read output scanlines as they become available:
 
 ```rust
 use oil_scale::{OilScale, ColorSpace};
 
-let (in_w, in_h) = (1920, 1080);
-let (out_w, out_h) = (480, 270);
-let cs = ColorSpace::RGBA;
-let cmp = cs.components(); // 4
+fn downscale(input_pixels: &[u8]) -> Vec<u8> {
+    let (in_w, in_h) = (1920, 1080);
+    let (out_w, out_h) = (480, 270);
+    let cs = ColorSpace::RGBA;
+    let cmp = cs.components(); // 4
 
-let mut scaler = OilScale::new(in_w, in_h, out_w, out_h, cs).unwrap();
+    let mut scaler = OilScale::new(in_w, in_h, out_w, out_h, cs).unwrap();
 
-let in_stride = in_w as usize * cmp;
-let out_stride = out_w as usize * cmp;
-let mut output = vec![0u8; out_h as usize * out_stride];
+    let in_stride = in_w as usize * cmp;
+    let out_stride = out_w as usize * cmp;
+    let mut output = vec![0u8; out_h as usize * out_stride];
 
-let mut in_line = 0usize;
-for i in 0..out_h as usize {
-    // push_scanline() until slots() returns 0
-    while scaler.slots() > 0 {
-        let scanline = &input_pixels[in_line * in_stride..(in_line + 1) * in_stride];
-        scaler.push_scanline(scanline);
-        in_line += 1;
+    let mut in_line = 0usize;
+    for i in 0..out_h as usize {
+        // push_scanline() until slots() returns 0
+        while scaler.slots() > 0 {
+            let scanline = &input_pixels[in_line * in_stride..(in_line + 1) * in_stride];
+            scaler.push_scanline(scanline);
+            in_line += 1;
+        }
+        scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
     }
-    scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+    output
 }
 ```
 
@@ -79,30 +90,6 @@ for i in 0..out_h as usize {
 - Catmull-Rom interpolation with correct sRGB gamma and premultiplied alpha
 - Streaming scanline-by-scanline API; never loads the full image into memory when the decoder allows it
 - SSE2 SIMD acceleration on x86_64
-
-### Cargo features
-
-| Feature | Default | Description |
-|---|---|---|
-| `png` | yes | PNG decode/resize/encode via `oil_scale::png` |
-| `jpeg` | yes | JPEG decode/resize/encode via `oil_scale::jpeg` |
-| `jpeg-turbo` | no | libjpeg-turbo FFI via `oil_scale::jpeg_ffi` (requires system headers) |
-
-With no features enabled, you get the core scaler (`OilScale`, `ColorSpace`, `fix_ratio`) and no codec dependencies.
-
-```toml
-# Default (png + jpeg adapters)
-oil-scale = "0.1"
-
-# Core scaler only — bring your own decoder/encoder
-oil-scale = { version = "0.1", default-features = false }
-
-# Just PNG support
-oil-scale = { version = "0.1", default-features = false, features = ["png"] }
-
-# Everything including FFI
-oil-scale = { version = "0.1", features = ["jpeg-turbo"] }
-```
 
 ### Command-line tool
 
