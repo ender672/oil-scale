@@ -12,13 +12,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oil-scale = "0.1"
+oil-scale = "0.2"
 
 # Or with libjpeg-turbo FFI. Lowest memory use, highest performance. Requires system headers:
-# oil-scale = { version = "0.1", features = ["jpeg-turbo"] }
+# oil-scale = { version = "0.2", features = ["jpeg-turbo"] }
 
 # Or with no default features (core scaler only — bring your own decoder/encoder):
-# oil-scale = { version = "0.1", default-features = false }
+# oil-scale = { version = "0.2", default-features = false }
 ```
 
 ### High-level API

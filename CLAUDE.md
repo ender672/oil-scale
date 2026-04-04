@@ -36,3 +36,11 @@ cargo run --release --bin benchmark -- image.png
 - **Premultiplied alpha**: RGB channels are premultiplied by alpha before interpolation, then unpremultiplied on output.
 - **Adaptive kernel width**: downscaling widens the kernel to cover all input pixels and prevent aliasing. Taps = `4 * (in_dim / out_dim)`, always even.
 - **Dimension constraint**: both dimensions must scale in the same direction (both up or both down). Range: 1 to 1,000,000.
+
+## Release process
+
+1. Update version references in `README.md`
+2. Update `version` in `Cargo.toml`
+3. Commit, tag (e.g., `git tag v0.3.0`), and push with `git push && git push --tags`
+
+A GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*` tags, runs tests, publishes to crates.io via trusted publishing, and creates a GitHub release.
