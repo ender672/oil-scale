@@ -97,7 +97,7 @@ fn resize(
             scaler.push_scanline(&pixels[row_start..row_start + in_stride]).unwrap();
             in_line += 1;
         }
-        scaler.read_scanline(&mut outbuf);
+        scaler.read_scanline(&mut outbuf).unwrap();
     }
     let elapsed = start.elapsed();
 

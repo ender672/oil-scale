@@ -22,7 +22,7 @@
 //!         let input_scanline: Vec<u8> = vec![0; 1920 * 3]; // read from your source
 //!         scaler.push_scanline(&input_scanline).unwrap();
 //!     }
-//!     scaler.read_scanline(&mut out_row);
+//!     scaler.read_scanline(&mut out_row).unwrap();
 //! }
 //! ```
 //!

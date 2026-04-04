@@ -36,7 +36,7 @@ pub fn resize_jpeg(
             scaler.push_scanline(&pixels[row_start..row_start + in_stride])?;
             in_line += 1;
         }
-        scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+        scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride])?;
     }
 
     let enc_color_type = match cs {

@@ -324,7 +324,7 @@ fn do_oil_scale(
             os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
-        os.read_scanline(out_row);
+        os.read_scanline(out_row).unwrap();
     }
 
     output
@@ -452,7 +452,7 @@ fn do_oil_scale_with_reset(
             os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
-        os.read_scanline(out_row);
+        os.read_scanline(out_row).unwrap();
     }
 
     // Reset and do second pass with the same input
@@ -467,7 +467,7 @@ fn do_oil_scale_with_reset(
             os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
-        os.read_scanline(out_row);
+        os.read_scanline(out_row).unwrap();
     }
 
     (output1, output2)
@@ -562,9 +562,9 @@ fn do_oil_scale_with_discard(
         }
         if out_row_idx % 2 == 1 {
             // Discard odd rows
-            os.discard_output_scanline();
+            os.discard_output_scanline().unwrap();
         } else {
-            os.read_scanline(&mut output[out_row_idx]);
+            os.read_scanline(&mut output[out_row_idx]).unwrap();
         }
     }
 
@@ -639,6 +639,56 @@ fn push_scanline_rejects_when_output_pending() {
         os.push_scanline(&input),
         Err(Error::InvalidArgument)
     ));
+}
+
+fn test_out_not_ready(in_dim: u32, out_dim: u32, cs: ColorSpace) {
+    let cmp = cs.components();
+    let out_stride = out_dim as usize * cmp;
+    let mut buf = vec![0u8; out_stride];
+
+    // Calling read_scanline/discard before any input should fail
+    let mut os = OilScale::new(in_dim, in_dim, out_dim, out_dim, cs).unwrap();
+    assert!(os.read_scanline(&mut buf).is_err());
+    assert!(os.discard_output_scanline().is_err());
+
+    // Feed one input line when more are needed — should still fail
+    if os.slots() > 1 {
+        let in_line = vec![0u8; in_dim as usize * cmp];
+        os.push_scanline(&in_line).unwrap();
+        assert!(os.slots() > 0);
+        assert!(os.read_scanline(&mut buf).is_err());
+        assert!(os.discard_output_scanline().is_err());
+    }
+
+    // Feed enough input — read_scanline should succeed
+    let mut os = OilScale::new(in_dim, in_dim, out_dim, out_dim, cs).unwrap();
+    while os.slots() > 0 {
+        let in_line = vec![0u8; in_dim as usize * cmp];
+        os.push_scanline(&in_line).unwrap();
+    }
+    assert!(os.read_scanline(&mut buf).is_ok());
+
+    // Same but with discard
+    let mut os = OilScale::new(in_dim, in_dim, out_dim, out_dim, cs).unwrap();
+    while os.slots() > 0 {
+        let in_line = vec![0u8; in_dim as usize * cmp];
+        os.push_scanline(&in_line).unwrap();
+    }
+    assert!(os.discard_output_scanline().is_ok());
+}
+
+#[test]
+fn out_not_ready_downscale() {
+    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA] {
+        test_out_not_ready(100, 50, cs);
+    }
+}
+
+#[test]
+fn out_not_ready_upscale() {
+    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA] {
+        test_out_not_ready(50, 100, cs);
+    }
 }
 
 // --- Error path and validation tests ---

@@ -881,17 +881,24 @@ impl OilScale {
 
     /// Produce the next scaled output scanline.
     ///
+    /// Returns `Err(Error::InvalidArgument)` if not enough input scanlines have
+    /// been fed yet (i.e. `slots()` is not 0).
+    ///
     /// # Panics
     ///
     /// Panics if `output.len()` is less than `output_width() * color_space().components()`,
     /// or if called more than `output_height()` times without a [`reset`](Self::reset).
-    pub fn read_scanline(&mut self, output: &mut [u8]) {
+    pub fn read_scanline(&mut self, output: &mut [u8]) -> Result<(), Error> {
+        if self.slots() != 0 {
+            return Err(Error::InvalidArgument);
+        }
         if self.is_upscale {
             self.up_scale_out(output);
         } else {
             self.down_scale_out(output);
         }
         self.out_pos += 1;
+        Ok(())
     }
 
     /// Skip the next output scanline without producing it.
@@ -900,11 +907,17 @@ impl OilScale {
     /// does not write any pixel data. Useful when a caller wants to discard
     /// certain output rows without the cost of computing them.
     ///
+    /// Returns `Err(Error::InvalidArgument)` if not enough input scanlines have
+    /// been fed yet (i.e. `slots()` is not 0).
+    ///
     /// # Panics
     ///
     /// Panics if called more than `output_height()` times without a
     /// [`reset`](Self::reset).
-    pub fn discard_output_scanline(&mut self) {
+    pub fn discard_output_scanline(&mut self) -> Result<(), Error> {
+        if self.slots() != 0 {
+            return Err(Error::InvalidArgument);
+        }
         if self.is_upscale {
             self.borders_y[self.in_pos as usize - 1] -= 1;
         } else {
@@ -921,6 +934,7 @@ impl OilScale {
             }
         }
         self.out_pos += 1;
+        Ok(())
     }
 
     /// Reset the scaler so it can process another image of the same dimensions.

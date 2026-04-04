@@ -51,7 +51,7 @@ pub fn resize_png(
                 scaler.push_scanline(&full_buf[row_start..row_start + in_stride])?;
                 in_line += 1;
             }
-            scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+            scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride])?;
         }
     } else {
         // Stream one row at a time
@@ -64,7 +64,7 @@ pub fn resize_png(
                 row_buf.copy_from_slice(row.data());
                 scaler.push_scanline(&row_buf)?;
             }
-            scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+            scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride])?;
         }
     };
 

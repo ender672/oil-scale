@@ -79,7 +79,7 @@ fn downscale(input_pixels: &[u8]) -> Vec<u8> {
             scaler.push_scanline(scanline);
             in_line += 1;
         }
-        scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);
+        scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]).unwrap();
     }
     output
 }

@@ -198,7 +198,7 @@ pub fn resize_jpeg_file(
             reader.read_scanline(&mut inbuf);
             scaler.push_scanline(&inbuf)?;
         }
-        scaler.read_scanline(&mut outbuf);
+        scaler.read_scanline(&mut outbuf)?;
         writer.write_scanline(&mut outbuf);
     }
 
@@ -236,7 +236,7 @@ pub fn resize_jpeg(
             reader.read_scanline(&mut inbuf);
             scaler.push_scanline(&inbuf)?;
         }
-        scaler.read_scanline(&mut outbuf);
+        scaler.read_scanline(&mut outbuf)?;
         writer.write_scanline(&mut outbuf);
     }
 
