@@ -321,7 +321,7 @@ fn do_oil_scale(
     let mut in_line = 0usize;
     for out_row in output.iter_mut().take(out_height as usize) {
         while os.slots() > 0 {
-            os.push_scanline(&input[in_line]);
+            os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
         os.read_scanline(out_row);
@@ -449,7 +449,7 @@ fn do_oil_scale_with_reset(
     let mut in_line = 0usize;
     for out_row in output1.iter_mut().take(out_height as usize) {
         while os.slots() > 0 {
-            os.push_scanline(&input[in_line]);
+            os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
         os.read_scanline(out_row);
@@ -464,7 +464,7 @@ fn do_oil_scale_with_reset(
     let mut in_line = 0usize;
     for out_row in output2.iter_mut().take(out_height as usize) {
         while os.slots() > 0 {
-            os.push_scanline(&input[in_line]);
+            os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
         }
         os.read_scanline(out_row);
@@ -536,6 +536,109 @@ fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::RGBA);
     test_scale_catrom_extremes(ColorSpace::RGBX);
     test_scale_catrom_extremes(ColorSpace::CMYK);
+}
+
+// --- discard_output_scanline tests ---
+
+fn do_oil_scale_with_discard(
+    input: &[Vec<u8>],
+    in_width: u32,
+    in_height: u32,
+    out_width: u32,
+    out_height: u32,
+    cs: ColorSpace,
+) -> Vec<Vec<u8>> {
+    let cmp = cs.components();
+    let mut os = OilScale::new(in_width, in_height, out_width, out_height, cs).unwrap();
+    let mut output: Vec<Vec<u8>> = (0..out_height)
+        .map(|_| vec![0u8; out_width as usize * cmp])
+        .collect();
+
+    let mut in_line = 0usize;
+    for out_row_idx in 0..out_height as usize {
+        while os.slots() > 0 {
+            os.push_scanline(&input[in_line]).unwrap();
+            in_line += 1;
+        }
+        if out_row_idx % 2 == 1 {
+            // Discard odd rows
+            os.discard_output_scanline();
+        } else {
+            os.read_scanline(&mut output[out_row_idx]);
+        }
+    }
+
+    output
+}
+
+fn test_discard_square_rand(rng: &mut StdRng, in_dim: u32, out_dim: u32, cs: ColorSpace) {
+    let cmp = cs.components();
+    let stride = cmp * in_dim as usize;
+
+    let input: Vec<Vec<u8>> = (0..in_dim)
+        .map(|_| {
+            let mut row = vec![0u8; stride];
+            for b in row.iter_mut() {
+                *b = (rng.gen::<u32>() % 256) as u8;
+            }
+            row
+        })
+        .collect();
+
+    // Get reference output (full scale, no discards)
+    let reference = do_oil_scale(&input, in_dim, in_dim, out_dim, out_dim, cs);
+
+    // Get output with discards on odd rows
+    let discarded = do_oil_scale_with_discard(&input, in_dim, in_dim, out_dim, out_dim, cs);
+
+    // Even rows must match exactly
+    for i in (0..out_dim as usize).step_by(2) {
+        assert_eq!(
+            reference[i], discarded[i],
+            "discard: row {} differs for {:?} {}->{}",
+            i, cs, in_dim, out_dim
+        );
+    }
+}
+
+fn test_discard_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::G);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::GA);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RGB);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RGBA);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RGBX);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::CMYK);
+}
+
+#[test]
+fn discard_downscale() {
+    let mut rng = StdRng::seed_from_u64(1531289700);
+    test_discard_each_cs(&mut rng, 100, 50);
+    test_discard_each_cs(&mut rng, 8, 3);
+}
+
+#[test]
+fn discard_upscale() {
+    let mut rng = StdRng::seed_from_u64(1531289701);
+    test_discard_each_cs(&mut rng, 50, 100);
+    test_discard_each_cs(&mut rng, 3, 8);
+}
+
+#[test]
+fn push_scanline_rejects_when_output_pending() {
+    let mut os = OilScale::new(100, 100, 50, 50, ColorSpace::RGB).unwrap();
+    let input = vec![0u8; 100 * 3];
+
+    // Feed scanlines until an output is ready
+    while os.slots() > 0 {
+        os.push_scanline(&input).unwrap();
+    }
+
+    // Now slots() == 0, push_scanline must fail
+    assert!(matches!(
+        os.push_scanline(&input),
+        Err(Error::InvalidArgument)
+    ));
 }
 
 // --- Error path and validation tests ---

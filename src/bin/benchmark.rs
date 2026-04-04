@@ -94,7 +94,7 @@ fn resize(
     for _ in 0..out_height {
         while scaler.slots() > 0 {
             let row_start = in_line * in_stride;
-            scaler.push_scanline(&pixels[row_start..row_start + in_stride]);
+            scaler.push_scanline(&pixels[row_start..row_start + in_stride]).unwrap();
             in_line += 1;
         }
         scaler.read_scanline(&mut outbuf);

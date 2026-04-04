@@ -196,7 +196,7 @@ pub fn resize_jpeg_file(
     for _ in 0..out_height {
         while scaler.slots() > 0 {
             reader.read_scanline(&mut inbuf);
-            scaler.push_scanline(&inbuf);
+            scaler.push_scanline(&inbuf)?;
         }
         scaler.read_scanline(&mut outbuf);
         writer.write_scanline(&mut outbuf);
@@ -234,7 +234,7 @@ pub fn resize_jpeg(
     for _ in 0..out_height {
         while scaler.slots() > 0 {
             reader.read_scanline(&mut inbuf);
-            scaler.push_scanline(&inbuf);
+            scaler.push_scanline(&inbuf)?;
         }
         scaler.read_scanline(&mut outbuf);
         writer.write_scanline(&mut outbuf);

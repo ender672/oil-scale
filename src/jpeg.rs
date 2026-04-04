@@ -33,7 +33,7 @@ pub fn resize_jpeg(
     for i in 0..out_height as usize {
         while scaler.slots() > 0 {
             let row_start = in_line * in_stride;
-            scaler.push_scanline(&pixels[row_start..row_start + in_stride]);
+            scaler.push_scanline(&pixels[row_start..row_start + in_stride])?;
             in_line += 1;
         }
         scaler.read_scanline(&mut output[i * out_stride..(i + 1) * out_stride]);

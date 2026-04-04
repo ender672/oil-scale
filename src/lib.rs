@@ -20,7 +20,7 @@
 //! for _ in 0..360 {
 //!     for _ in 0..scaler.slots() {
 //!         let input_scanline: Vec<u8> = vec![0; 1920 * 3]; // read from your source
-//!         scaler.push_scanline(&input_scanline);
+//!         scaler.push_scanline(&input_scanline).unwrap();
 //!     }
 //!     scaler.read_scanline(&mut out_row);
 //! }

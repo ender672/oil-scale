@@ -859,16 +859,24 @@ impl OilScale {
 
     /// Ingest one input scanline.
     ///
+    /// Returns `Err(Error::InvalidArgument)` if an output scanline is ready but
+    /// has not been consumed (i.e. `slots()` returns 0). Feeding input while an
+    /// output line is pending would corrupt internal state.
+    ///
     /// # Panics
     ///
     /// Panics if `input.len()` is less than `input_width() * color_space().components()`,
     /// or if called more times than the input height without a [`reset`](Self::reset).
-    pub fn push_scanline(&mut self, input: &[u8]) {
+    pub fn push_scanline(&mut self, input: &[u8]) -> Result<(), Error> {
+        if self.slots() == 0 {
+            return Err(Error::InvalidArgument);
+        }
         if self.is_upscale {
             self.up_scale_in(input);
         } else {
             self.down_scale_in(input);
         }
+        Ok(())
     }
 
     /// Produce the next scaled output scanline.
@@ -882,6 +890,35 @@ impl OilScale {
             self.up_scale_out(output);
         } else {
             self.down_scale_out(output);
+        }
+        self.out_pos += 1;
+    }
+
+    /// Skip the next output scanline without producing it.
+    ///
+    /// This advances internal state so that input feeding can continue, but
+    /// does not write any pixel data. Useful when a caller wants to discard
+    /// certain output rows without the cost of computing them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called more than `output_height()` times without a
+    /// [`reset`](Self::reset).
+    pub fn discard_output_scanline(&mut self) {
+        if self.is_upscale {
+            self.borders_y[self.in_pos as usize - 1] -= 1;
+        } else {
+            let cmp = self.cs.components();
+            let sl_len = self.out_width as usize * cmp;
+            let mut s_idx = 0;
+            for _ in 0..sl_len {
+                let s = &mut self.sums_y[s_idx..s_idx + 4];
+                s[0] = s[1];
+                s[1] = s[2];
+                s[2] = s[3];
+                s[3] = 0.0;
+                s_idx += 4;
+            }
         }
         self.out_pos += 1;
     }
