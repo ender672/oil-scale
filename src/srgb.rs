@@ -77,7 +77,7 @@ impl SrgbTables {
     /// This mirrors the C `l2s_map` pointer: indices can be negative (for
     /// Catmull-Rom overshoot) and positive up to l2s_len, relying on padding
     /// in both directions.
-    #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+    #[cfg(all(any(target_arch = "x86_64", target_arch = "aarch64"), not(feature = "force-scalar")))]
     #[inline]
     pub fn l2s_ptr(&self) -> *const u8 {
         unsafe { self.l2s_all.as_ptr().add(self.l2s_offset) }

@@ -3,6 +3,8 @@ use crate::kernel;
 use crate::srgb;
 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
 use crate::sse2;
+#[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+use crate::neon;
 
 const MAX_DIMENSION: u32 = 1_000_000;
 const TAPS: usize = 4;
@@ -70,19 +72,19 @@ pub struct OilScale {
     is_upscale: bool,
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 #[inline]
 fn clampf(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 #[inline]
 fn f2i(x: f32) -> u8 {
     (x + 0.5) as u8
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 #[inline]
 fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     for i in 0..4 {
@@ -90,7 +92,7 @@ fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 #[inline]
 fn push_f(f: &mut [f32; 4], val: f32) {
     f[0] = f[1];
@@ -99,7 +101,7 @@ fn push_f(f: &mut [f32; 4], val: f32) {
     f[3] = val;
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 #[inline]
 fn shift_left(f: &mut [f32]) {
     f[0] = f[1];
@@ -108,7 +110,7 @@ fn shift_left(f: &mut [f32]) {
     f[3] = 0.0;
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_g(
     input: &[u8],
     width_in: u32,
@@ -134,7 +136,7 @@ fn xscale_up_g(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_g(
     lines: [&[f32]; 4],
     len: usize,
@@ -150,7 +152,7 @@ fn yscale_up_g(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_g(
     input: &[u8],
     sums_y: &mut [f32],
@@ -178,7 +180,7 @@ fn scale_down_g(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     for i in 0..sl_len {
@@ -188,7 +190,7 @@ fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_ga(
     input: &[u8],
     width_in: u32,
@@ -220,7 +222,7 @@ fn xscale_up_ga(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_ga(
     lines: [&[f32]; 4],
     len: usize,
@@ -246,7 +248,7 @@ fn yscale_up_ga(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_ga(
     input: &[u8],
     sums_y: &mut [f32],
@@ -278,7 +280,7 @@ fn scale_down_ga(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_ga(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
@@ -297,7 +299,7 @@ fn yscale_out_ga(sums: &mut [f32], width: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgb(
     input: &[u8],
     width_in: u32,
@@ -329,7 +331,7 @@ fn xscale_up_rgb(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_rgb(
     lines: [&[f32]; 4],
     len: usize,
@@ -346,7 +348,7 @@ fn yscale_up_rgb(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgba(
     input: &[u8],
     width_in: u32,
@@ -381,7 +383,7 @@ fn xscale_up_rgba(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_rgba(
     lines: [&[f32]; 4],
     len: usize,
@@ -411,7 +413,7 @@ fn yscale_up_rgba(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgb(
     input: &[u8],
     sums_y: &mut [f32],
@@ -444,7 +446,7 @@ fn scale_down_rgb(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     let tables = srgb::tables();
     let mut s_idx = 0usize;
@@ -455,7 +457,7 @@ fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgba(
     input: &[u8],
     sums_y: &mut [f32],
@@ -490,7 +492,7 @@ fn scale_down_rgba(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgba(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let tables = srgb::tables();
     let mut s_idx = 0usize;
@@ -514,7 +516,7 @@ fn yscale_out_rgba(sums: &mut [f32], width: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgbx(
     input: &[u8],
     width_in: u32,
@@ -547,7 +549,7 @@ fn xscale_up_rgbx(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_rgbx(
     lines: [&[f32]; 4],
     len: usize,
@@ -572,7 +574,7 @@ fn yscale_up_rgbx(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgbx(
     input: &[u8],
     sums_y: &mut [f32],
@@ -606,7 +608,7 @@ fn scale_down_rgbx(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgbx(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let tables = srgb::tables();
     let mut s_idx = 0usize;
@@ -624,7 +626,7 @@ fn yscale_out_rgbx(sums: &mut [f32], width: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_cmyk(
     input: &[u8],
     width_in: u32,
@@ -655,7 +657,7 @@ fn xscale_up_cmyk(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_cmyk(
     input: &[u8],
     sums_y: &mut [f32],
@@ -690,7 +692,7 @@ fn scale_down_cmyk(
 // --- NOGAMMA scalar functions ---
 // No SSE2 paths yet, so these are always compiled.
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgb_nogamma(
     input: &[u8],
     width_in: u32,
@@ -722,7 +724,7 @@ fn xscale_up_rgb_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgba_nogamma(
     input: &[u8],
     width_in: u32,
@@ -757,7 +759,7 @@ fn xscale_up_rgba_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn xscale_up_rgbx_nogamma(
     input: &[u8],
     width_in: u32,
@@ -790,7 +792,7 @@ fn xscale_up_rgbx_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_rgba_nogamma(
     lines: [&[f32]; 4],
     len: usize,
@@ -819,7 +821,7 @@ fn yscale_up_rgba_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_up_rgbx_nogamma(
     lines: [&[f32]; 4],
     len: usize,
@@ -843,7 +845,7 @@ fn yscale_up_rgbx_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgb_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -876,7 +878,7 @@ fn scale_down_rgb_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgba_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -911,7 +913,7 @@ fn scale_down_rgba_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn scale_down_rgbx_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -945,7 +947,7 @@ fn scale_down_rgbx_nogamma(
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
@@ -968,7 +970,7 @@ fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
@@ -1270,7 +1272,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgb(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgb(
                     input,
                     self.in_width,
@@ -1290,7 +1302,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgba(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgba(
                     input,
                     self.in_width,
@@ -1310,7 +1332,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgbx(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgbx(
                     input,
                     self.in_width,
@@ -1330,7 +1362,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_g(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_g(
                     input,
                     self.in_width,
@@ -1350,7 +1392,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_ga(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_ga(
                     input,
                     self.in_width,
@@ -1370,7 +1422,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_cmyk(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_cmyk(
                     input,
                     self.in_width,
@@ -1390,7 +1452,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgb_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgb_nogamma(
                     input,
                     self.in_width,
@@ -1410,7 +1482,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgba_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgba_nogamma(
                     input,
                     self.in_width,
@@ -1430,7 +1512,17 @@ impl OilScale {
                         &self.borders_x,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::xscale_up_rgbx_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 xscale_up_rgbx_nogamma(
                     input,
                     self.in_width,
@@ -1471,7 +1563,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_rgb(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_rgb(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_rgb(lines, sl_len, coeffs, output);
             }
             ColorSpace::RGBA => {
@@ -1479,7 +1575,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_rgba(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_rgba(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_rgba(lines, sl_len, coeffs, output);
             }
             ColorSpace::RGBX => {
@@ -1487,7 +1587,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_rgbx(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_rgbx(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_rgbx(lines, sl_len, coeffs, output);
             }
             ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
@@ -1495,7 +1599,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_g(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_g(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_g(lines, sl_len, coeffs, output);
             }
             ColorSpace::GA => {
@@ -1503,7 +1611,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_ga(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_ga(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_ga(lines, sl_len, coeffs, output);
             }
             ColorSpace::RgbaNoGamma => {
@@ -1511,7 +1623,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
             }
             ColorSpace::RgbxNoGamma => {
@@ -1519,7 +1635,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
             }
         }
@@ -1549,7 +1669,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgb(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgb(
                     input,
                     &mut self.sums_y,
@@ -1571,7 +1702,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgba(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgba(
                     input,
                     &mut self.sums_y,
@@ -1593,7 +1735,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgbx(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgbx(
                     input,
                     &mut self.sums_y,
@@ -1615,7 +1768,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_g(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_g(
                     input,
                     &mut self.sums_y,
@@ -1637,7 +1801,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_ga(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_ga(
                     input,
                     &mut self.sums_y,
@@ -1659,7 +1834,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_cmyk(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_cmyk(
                     input,
                     &mut self.sums_y,
@@ -1681,7 +1867,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgb_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgb_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1703,7 +1900,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgba_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgba_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1725,7 +1933,18 @@ impl OilScale {
                         &coeffs_y,
                     );
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::scale_down_rgbx_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 scale_down_rgbx_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1779,7 +1998,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_rgb(&mut self.sums_y, sl_len, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_rgb(&mut self.sums_y, sl_len, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgb(&mut self.sums_y, sl_len, output);
             }
             ColorSpace::RGBA => {
@@ -1787,7 +2010,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_rgba(&mut self.sums_y, self.out_width, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::RGBX => {
@@ -1795,7 +2022,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
@@ -1803,7 +2034,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_g(&mut self.sums_y, sl_len, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_g(&mut self.sums_y, sl_len, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_g(&mut self.sums_y, sl_len, output);
             }
             ColorSpace::GA => {
@@ -1811,7 +2046,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_ga(&mut self.sums_y, self.out_width, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_ga(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_ga(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::RgbaNoGamma => {
@@ -1819,7 +2058,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::RgbxNoGamma => {
@@ -1827,7 +2070,11 @@ impl OilScale {
                 unsafe {
                     sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
                 }
-                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
+                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+                unsafe {
+                    neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output);
             }
         }
