@@ -2564,6 +2564,159 @@ pub unsafe fn yscale_up_rgba_nogamma(
     }
 }
 
+/// SSE2 horizontal upscale for RGBX_NOGAMMA.
+/// Like xscale_up_rgbx but uses i2f (identity) instead of s2l (sRGB linearization).
+#[target_feature(enable = "sse2")]
+pub unsafe fn xscale_up_rgbx_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let mut smp_r = _mm_setzero_ps();
+    let mut smp_g = _mm_setzero_ps();
+    let mut smp_b = _mm_setzero_ps();
+    let out_ptr = out.as_mut_ptr();
+    let coeff_ptr = coeff_buf.as_ptr();
+    let border_ptr = border_buf.as_ptr();
+    let in_ptr = input.as_ptr();
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 4;
+
+        smp_r = push_f_sse2(smp_r, *i2f.add(*in_ptr.add(in_base) as usize));
+        smp_g = push_f_sse2(smp_g, *i2f.add(*in_ptr.add(in_base + 1) as usize));
+        smp_b = push_f_sse2(smp_b, *i2f.add(*in_ptr.add(in_base + 2) as usize));
+
+        let mut j = *border_ptr.add(i);
+
+        // Process pairs of outputs
+        while j >= 2 {
+            let c0 = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+            let c1 = _mm_loadu_ps(coeff_ptr.add(coeff_idx + 4));
+
+            let t2_r = dot4x2(smp_r, c0, c1);
+            let t2_g = dot4x2(smp_g, c0, c1);
+            let t2_b = dot4x2(smp_b, c0, c1);
+
+            *out_ptr.add(out_idx)     = _mm_cvtss_f32(t2_r);
+            *out_ptr.add(out_idx + 1) = _mm_cvtss_f32(t2_g);
+            *out_ptr.add(out_idx + 2) = _mm_cvtss_f32(t2_b);
+            *out_ptr.add(out_idx + 3) = 1.0;
+            *out_ptr.add(out_idx + 4) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_r, t2_r, mm_shuffle(1, 1, 1, 1)),
+            );
+            *out_ptr.add(out_idx + 5) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_g, t2_g, mm_shuffle(1, 1, 1, 1)),
+            );
+            *out_ptr.add(out_idx + 6) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_b, t2_b, mm_shuffle(1, 1, 1, 1)),
+            );
+            *out_ptr.add(out_idx + 7) = 1.0;
+
+            out_idx += 8;
+            coeff_idx += 8;
+            j -= 2;
+        }
+
+        // Process remaining single output
+        if j > 0 {
+            let coeffs = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+
+            *out_ptr.add(out_idx)     = dot4(smp_r, coeffs);
+            *out_ptr.add(out_idx + 1) = dot4(smp_g, coeffs);
+            *out_ptr.add(out_idx + 2) = dot4(smp_b, coeffs);
+            *out_ptr.add(out_idx + 3) = 1.0;
+
+            out_idx += 4;
+            coeff_idx += 4;
+        }
+    }
+}
+
+/// SSE2 vertical upscale for RGBX_NOGAMMA.
+/// Clamps RGB to [0,1], scales to 255, X byte always 255 (no sRGB LUT).
+#[target_feature(enable = "sse2")]
+pub unsafe fn yscale_up_rgbx_nogamma(
+    lines: [&[f32]; 4],
+    len: usize,
+    coeffs: &[f32],
+    out: &mut [u8],
+) {
+    let c0 = _mm_set1_ps(coeffs[0]);
+    let c1 = _mm_set1_ps(coeffs[1]);
+    let c2 = _mm_set1_ps(coeffs[2]);
+    let c3 = _mm_set1_ps(coeffs[3]);
+    let scale = _mm_set1_ps(255.0);
+    let half = _mm_set1_ps(0.5);
+    let one = _mm_set1_ps(1.0);
+    let zero = _mm_setzero_ps();
+
+    let l0 = lines[0].as_ptr();
+    let l1 = lines[1].as_ptr();
+    let l2 = lines[2].as_ptr();
+    let l3 = lines[3].as_ptr();
+    let out_ptr = out.as_mut_ptr();
+
+    let mut i = 0;
+
+    // Process 2 RGBX pixels (8 floats) at a time
+    while i + 7 < len {
+        let sum_a = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i)))));
+
+        let sum_b = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i + 4))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i + 4)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i + 4))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i + 4)))));
+
+        // Clamp to [0, 1], scale to 255, round
+        let clamped_a = _mm_min_ps(_mm_max_ps(sum_a, zero), one);
+        let idx_a = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped_a, scale), half));
+
+        let clamped_b = _mm_min_ps(_mm_max_ps(sum_b, zero), one);
+        let idx_b = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped_b, scale), half));
+
+        // Pack both pixels to bytes
+        let packed = _mm_packs_epi32(idx_a, idx_b);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(i) as *mut __m128i, packed);
+
+        // Overwrite X bytes with 255
+        *out_ptr.add(i + 3) = 255;
+        *out_ptr.add(i + 7) = 255;
+
+        i += 8;
+    }
+
+    // Remaining pixels one at a time
+    while i + 3 < len {
+        let sum = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i)))));
+
+        let clamped = _mm_min_ps(_mm_max_ps(sum, zero), one);
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped, scale), half));
+        let packed = _mm_packs_epi32(idx, idx);
+        let packed = _mm_packus_epi16(packed, packed);
+        *(out_ptr.add(i) as *mut i32) = _mm_cvtsi128_si32(packed);
+        *out_ptr.add(i + 3) = 255;
+
+        i += 4;
+    }
+}
+
 /// SSE2 output for downscaled RGBA_NOGAMMA.
 /// Un-premultiplies, clamps, scales to 255, packs to bytes (no sRGB LUT).
 #[target_feature(enable = "sse2")]

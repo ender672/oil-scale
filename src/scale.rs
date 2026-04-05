@@ -70,16 +70,19 @@ pub struct OilScale {
     is_upscale: bool,
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn clampf(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn f2i(x: f32) -> u8 {
     (x + 0.5) as u8
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     for i in 0..4 {
@@ -87,6 +90,7 @@ fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn push_f(f: &mut [f32; 4], val: f32) {
     f[0] = f[1];
@@ -95,6 +99,7 @@ fn push_f(f: &mut [f32; 4], val: f32) {
     f[3] = val;
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn shift_left(f: &mut [f32]) {
     f[0] = f[1];
@@ -685,6 +690,7 @@ fn scale_down_cmyk(
 // --- NOGAMMA scalar functions ---
 // No SSE2 paths yet, so these are always compiled.
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn xscale_up_rgb_nogamma(
     input: &[u8],
     width_in: u32,
@@ -716,6 +722,7 @@ fn xscale_up_rgb_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn xscale_up_rgba_nogamma(
     input: &[u8],
     width_in: u32,
@@ -750,6 +757,7 @@ fn xscale_up_rgba_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn xscale_up_rgbx_nogamma(
     input: &[u8],
     width_in: u32,
@@ -782,6 +790,7 @@ fn xscale_up_rgbx_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn yscale_up_rgba_nogamma(
     lines: [&[f32]; 4],
     len: usize,
@@ -810,6 +819,7 @@ fn yscale_up_rgba_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn yscale_up_rgbx_nogamma(
     lines: [&[f32]; 4],
     len: usize,
@@ -833,6 +843,7 @@ fn yscale_up_rgbx_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn scale_down_rgb_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -865,6 +876,7 @@ fn scale_down_rgb_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn scale_down_rgba_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -899,6 +911,7 @@ fn scale_down_rgba_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn scale_down_rgbx_nogamma(
     input: &[u8],
     sums_y: &mut [f32],
@@ -932,6 +945,7 @@ fn scale_down_rgbx_nogamma(
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
@@ -954,6 +968,7 @@ fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     }
 }
 
+#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
@@ -1405,6 +1420,17 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbxNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::xscale_up_rgbx_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 xscale_up_rgbx_nogamma(
                     input,
                     self.in_width,
@@ -1489,6 +1515,11 @@ impl OilScale {
                 yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
             }
             ColorSpace::RgbxNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
             }
         }
