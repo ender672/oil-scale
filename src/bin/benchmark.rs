@@ -203,6 +203,9 @@ fn main() {
         ("RGBA", ColorSpace::RGBA),
         ("RGBX", ColorSpace::RGBX),
         ("CMYK", ColorSpace::CMYK),
+        ("RGB_NOGAMMA", ColorSpace::RgbNoGamma),
+        ("RGBA_NOGAMMA", ColorSpace::RgbaNoGamma),
+        ("RGBX_NOGAMMA", ColorSpace::RgbxNoGamma),
     ];
 
     // Filter to a specific colorspace if requested
@@ -215,14 +218,14 @@ fn main() {
                 let pixels = match *cs {
                     ColorSpace::G => rgba_to_g(&image.pixels, image.width, image.height),
                     ColorSpace::GA => rgba_to_ga(&image.pixels, image.width, image.height),
-                    ColorSpace::RGB => rgba_to_rgb(&image.pixels, image.width, image.height),
-                    ColorSpace::RGBX => rgba_to_rgbx(&image.pixels, image.width, image.height),
+                    ColorSpace::RGB | ColorSpace::RgbNoGamma => rgba_to_rgb(&image.pixels, image.width, image.height),
+                    ColorSpace::RGBX | ColorSpace::RgbxNoGamma => rgba_to_rgbx(&image.pixels, image.width, image.height),
                     _ => image.pixels.clone(),
                 };
                 do_bench_sizes(n, &pixels, image.width, image.height, *cs, iterations, mode);
             }
             None => {
-                eprintln!("Colorspace not recognized. Options: G, GA, RGB, RGBA, RGBX, CMYK");
+                eprintln!("Colorspace not recognized. Options: G, GA, RGB, RGBA, RGBX, CMYK, RGB_NOGAMMA, RGBA_NOGAMMA, RGBX_NOGAMMA");
                 process::exit(1);
             }
         }
@@ -231,8 +234,8 @@ fn main() {
             let pixels = match *cs {
                 ColorSpace::G => rgba_to_g(&image.pixels, image.width, image.height),
                 ColorSpace::GA => rgba_to_ga(&image.pixels, image.width, image.height),
-                ColorSpace::RGB => rgba_to_rgb(&image.pixels, image.width, image.height),
-                ColorSpace::RGBX => rgba_to_rgbx(&image.pixels, image.width, image.height),
+                ColorSpace::RGB | ColorSpace::RgbNoGamma => rgba_to_rgb(&image.pixels, image.width, image.height),
+                ColorSpace::RGBX | ColorSpace::RgbxNoGamma => rgba_to_rgbx(&image.pixels, image.width, image.height),
                 _ => image.pixels.clone(),
             };
             do_bench_sizes(

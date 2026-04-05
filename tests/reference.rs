@@ -102,7 +102,7 @@ fn clamp_f(val: f64) -> f64 {
 
 fn preprocess(pixel: &mut [f64], cs: ColorSpace) {
     match cs {
-        ColorSpace::G | ColorSpace::CMYK => {}
+        ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {}
         ColorSpace::GA => {
             pixel[0] *= pixel[1];
         }
@@ -120,6 +120,14 @@ fn preprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[0] = srgb_to_linear_ref(pixel[0]);
             pixel[1] = srgb_to_linear_ref(pixel[1]);
             pixel[2] = srgb_to_linear_ref(pixel[2]);
+            pixel[3] = 1.0;
+        }
+        ColorSpace::RgbaNoGamma => {
+            pixel[0] *= pixel[3];
+            pixel[1] *= pixel[3];
+            pixel[2] *= pixel[3];
+        }
+        ColorSpace::RgbxNoGamma => {
             pixel[3] = 1.0;
         }
         _ => {}
@@ -166,6 +174,29 @@ fn postprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[0] = linear_to_srgb_ref(pixel[0]);
             pixel[1] = linear_to_srgb_ref(pixel[1]);
             pixel[2] = linear_to_srgb_ref(pixel[2]);
+            pixel[3] = 1.0;
+        }
+        ColorSpace::RgbNoGamma => {
+            pixel[0] = clamp_f(pixel[0]);
+            pixel[1] = clamp_f(pixel[1]);
+            pixel[2] = clamp_f(pixel[2]);
+        }
+        ColorSpace::RgbaNoGamma => {
+            let alpha = clamp_f(pixel[3]);
+            if alpha != 0.0 {
+                pixel[0] /= alpha;
+                pixel[1] /= alpha;
+                pixel[2] /= alpha;
+            }
+            pixel[0] = clamp_f(pixel[0]);
+            pixel[1] = clamp_f(pixel[1]);
+            pixel[2] = clamp_f(pixel[2]);
+            pixel[3] = alpha;
+        }
+        ColorSpace::RgbxNoGamma => {
+            pixel[0] = clamp_f(pixel[0]);
+            pixel[1] = clamp_f(pixel[1]);
+            pixel[2] = clamp_f(pixel[2]);
             pixel[3] = 1.0;
         }
         _ => {}
@@ -373,6 +404,9 @@ fn test_scale_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RGBA);
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RGBX);
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::CMYK);
+    test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
+    test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
+    test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
 }
 
 fn test_scale_all_permutations(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
@@ -506,6 +540,9 @@ fn test_reset_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RGBA);
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RGBX);
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::CMYK);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
 }
 
 #[test]
@@ -536,6 +573,9 @@ fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::RGBA);
     test_scale_catrom_extremes(ColorSpace::RGBX);
     test_scale_catrom_extremes(ColorSpace::CMYK);
+    test_scale_catrom_extremes(ColorSpace::RgbNoGamma);
+    test_scale_catrom_extremes(ColorSpace::RgbaNoGamma);
+    test_scale_catrom_extremes(ColorSpace::RgbxNoGamma);
 }
 
 // --- discard_output_scanline tests ---
@@ -608,6 +648,9 @@ fn test_discard_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RGBA);
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RGBX);
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::CMYK);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
 }
 
 #[test]
@@ -679,14 +722,16 @@ fn test_out_not_ready(in_dim: u32, out_dim: u32, cs: ColorSpace) {
 
 #[test]
 fn out_not_ready_downscale() {
-    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA] {
+    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA,
+                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma] {
         test_out_not_ready(100, 50, cs);
     }
 }
 
 #[test]
 fn out_not_ready_upscale() {
-    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA] {
+    for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA,
+                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma] {
         test_out_not_ready(50, 100, cs);
     }
 }
@@ -809,6 +854,9 @@ fn colorspace_components() {
     assert_eq!(ColorSpace::RGBA.components(), 4);
     assert_eq!(ColorSpace::RGBX.components(), 4);
     assert_eq!(ColorSpace::CMYK.components(), 4);
+    assert_eq!(ColorSpace::RgbNoGamma.components(), 3);
+    assert_eq!(ColorSpace::RgbaNoGamma.components(), 4);
+    assert_eq!(ColorSpace::RgbxNoGamma.components(), 4);
 }
 
 // --- Error Display tests ---

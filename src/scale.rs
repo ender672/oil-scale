@@ -70,19 +70,16 @@ pub struct OilScale {
     is_upscale: bool,
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn clampf(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn f2i(x: f32) -> u8 {
     (x + 0.5) as u8
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     for i in 0..4 {
@@ -90,7 +87,6 @@ fn add_sample_to_sum(sample: f32, coeffs: &[f32], sum: &mut [f32]) {
     }
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn push_f(f: &mut [f32; 4], val: f32) {
     f[0] = f[1];
@@ -99,7 +95,6 @@ fn push_f(f: &mut [f32; 4], val: f32) {
     f[3] = val;
 }
 
-#[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
 #[inline]
 fn shift_left(f: &mut [f32]) {
     f[0] = f[1];
@@ -687,6 +682,294 @@ fn scale_down_cmyk(
     }
 }
 
+// --- NOGAMMA scalar functions ---
+// No SSE2 paths yet, so these are always compiled.
+
+fn xscale_up_rgb_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let mut smp = [[0.0f32; 4]; 3];
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 3;
+        for j in 0..3 {
+            push_f(&mut smp[j], tables.i2f[input[in_base + j] as usize]);
+        }
+        for _ in 0..border_buf[i] {
+            let coeffs = &coeff_buf[coeff_idx..coeff_idx + 4];
+            for j in 0..3 {
+                out[out_idx + j] = smp[j][0] * coeffs[0]
+                    + smp[j][1] * coeffs[1]
+                    + smp[j][2] * coeffs[2]
+                    + smp[j][3] * coeffs[3];
+            }
+            out_idx += 3;
+            coeff_idx += 4;
+        }
+    }
+}
+
+fn xscale_up_rgba_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let mut smp = [[0.0f32; 4]; 4];
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 4;
+        let alpha = tables.i2f[input[in_base + 3] as usize];
+        push_f(&mut smp[3], alpha);
+        let alpha_val = smp[3][3];
+        for j in 0..3 {
+            push_f(&mut smp[j], alpha_val * tables.i2f[input[in_base + j] as usize]);
+        }
+        for _ in 0..border_buf[i] {
+            let coeffs = &coeff_buf[coeff_idx..coeff_idx + 4];
+            for j in 0..4 {
+                out[out_idx + j] = smp[j][0] * coeffs[0]
+                    + smp[j][1] * coeffs[1]
+                    + smp[j][2] * coeffs[2]
+                    + smp[j][3] * coeffs[3];
+            }
+            out_idx += 4;
+            coeff_idx += 4;
+        }
+    }
+}
+
+fn xscale_up_rgbx_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let mut smp = [[0.0f32; 4]; 4];
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 4;
+        for j in 0..3 {
+            push_f(&mut smp[j], tables.i2f[input[in_base + j] as usize]);
+        }
+        push_f(&mut smp[3], 1.0);
+        for _ in 0..border_buf[i] {
+            let coeffs = &coeff_buf[coeff_idx..coeff_idx + 4];
+            for j in 0..4 {
+                out[out_idx + j] = smp[j][0] * coeffs[0]
+                    + smp[j][1] * coeffs[1]
+                    + smp[j][2] * coeffs[2]
+                    + smp[j][3] * coeffs[3];
+            }
+            out_idx += 4;
+            coeff_idx += 4;
+        }
+    }
+}
+
+fn yscale_up_rgba_nogamma(
+    lines: [&[f32]; 4],
+    len: usize,
+    coeffs: &[f32],
+    out: &mut [u8],
+) {
+    let mut i = 0;
+    while i < len {
+        let mut sums = [0.0f32; 4];
+        for j in 0..4 {
+            sums[j] = coeffs[0] * lines[0][i + j]
+                + coeffs[1] * lines[1][i + j]
+                + coeffs[2] * lines[2][i + j]
+                + coeffs[3] * lines[3][i + j];
+        }
+        let alpha = clampf(sums[3]);
+        for j in 0..3 {
+            if alpha != 0.0 && alpha != 1.0 {
+                sums[j] /= alpha;
+                sums[j] = clampf(sums[j]);
+            }
+            out[i + j] = f2i(clampf(sums[j]) * 255.0);
+        }
+        out[i + 3] = f2i(alpha * 255.0);
+        i += 4;
+    }
+}
+
+fn yscale_up_rgbx_nogamma(
+    lines: [&[f32]; 4],
+    len: usize,
+    coeffs: &[f32],
+    out: &mut [u8],
+) {
+    let mut i = 0;
+    while i < len {
+        let mut sums = [0.0f32; 4];
+        for j in 0..4 {
+            sums[j] = coeffs[0] * lines[0][i + j]
+                + coeffs[1] * lines[1][i + j]
+                + coeffs[2] * lines[2][i + j]
+                + coeffs[3] * lines[3][i + j];
+        }
+        for j in 0..3 {
+            out[i + j] = f2i(clampf(sums[j]) * 255.0);
+        }
+        out[i + 3] = 255;
+        i += 4;
+    }
+}
+
+fn scale_down_rgb_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let mut sum = [[0.0f32; 4]; 3];
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        for _ in 0..border_buf[i] {
+            let cx = &coeffs_x[cx_idx..cx_idx + 4];
+            for k in 0..3 {
+                add_sample_to_sum(tables.i2f[input[in_idx + k] as usize], cx, &mut sum[k]);
+            }
+            in_idx += 3;
+            cx_idx += 4;
+        }
+
+        for j in 0..3 {
+            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            shift_left(&mut sum[j]);
+            sy_idx += 4;
+        }
+    }
+}
+
+fn scale_down_rgba_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let mut sum = [[0.0f32; 4]; 4];
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        for _ in 0..border_buf[i] {
+            let cx = &coeffs_x[cx_idx..cx_idx + 4];
+            let alpha = tables.i2f[input[in_idx + 3] as usize];
+            for k in 0..3 {
+                add_sample_to_sum(tables.i2f[input[in_idx + k] as usize] * alpha, cx, &mut sum[k]);
+            }
+            add_sample_to_sum(alpha, cx, &mut sum[3]);
+            in_idx += 4;
+            cx_idx += 4;
+        }
+
+        for j in 0..4 {
+            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            shift_left(&mut sum[j]);
+            sy_idx += 4;
+        }
+    }
+}
+
+fn scale_down_rgbx_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let mut sum = [[0.0f32; 4]; 4];
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        for _ in 0..border_buf[i] {
+            let cx = &coeffs_x[cx_idx..cx_idx + 4];
+            for k in 0..3 {
+                add_sample_to_sum(tables.i2f[input[in_idx + k] as usize], cx, &mut sum[k]);
+            }
+            add_sample_to_sum(1.0, cx, &mut sum[3]);
+            in_idx += 4;
+            cx_idx += 4;
+        }
+
+        for j in 0..4 {
+            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            shift_left(&mut sum[j]);
+            sy_idx += 4;
+        }
+    }
+}
+
+fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        let alpha = clampf(sums[s_idx + 12]);
+        if alpha != 0.0 {
+            for j in 0..3 {
+                sums[s_idx + j * 4] /= alpha;
+            }
+        }
+        for j in 0..3 {
+            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4]) * 255.0);
+            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+        }
+        out[o_idx + 3] = f2i(alpha * 255.0);
+        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
+
+fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        for j in 0..3 {
+            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4]) * 255.0);
+            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+        }
+        out[o_idx + 3] = 255;
+        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
+
 impl OilScale {
     /// Create a new scaler for the given input/output dimensions and color space.
     pub fn new(
@@ -1081,6 +1364,33 @@ impl OilScale {
                     &self.borders_x,
                 );
             }
+            ColorSpace::RgbNoGamma => {
+                xscale_up_rgb_nogamma(
+                    input,
+                    self.in_width,
+                    &mut self.rb[rb_offset..rb_offset + sl_len],
+                    &self.coeffs_x,
+                    &self.borders_x,
+                );
+            }
+            ColorSpace::RgbaNoGamma => {
+                xscale_up_rgba_nogamma(
+                    input,
+                    self.in_width,
+                    &mut self.rb[rb_offset..rb_offset + sl_len],
+                    &self.coeffs_x,
+                    &self.borders_x,
+                );
+            }
+            ColorSpace::RgbxNoGamma => {
+                xscale_up_rgbx_nogamma(
+                    input,
+                    self.in_width,
+                    &mut self.rb[rb_offset..rb_offset + sl_len],
+                    &self.coeffs_x,
+                    &self.borders_x,
+                );
+            }
         }
 
         self.in_pos += 1;
@@ -1132,7 +1442,7 @@ impl OilScale {
                 #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_up_rgbx(lines, sl_len, coeffs, output);
             }
-            ColorSpace::G | ColorSpace::CMYK => {
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
                     sse2::yscale_up_g(lines, sl_len, coeffs, output);
@@ -1147,6 +1457,12 @@ impl OilScale {
                 }
                 #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_up_ga(lines, sl_len, coeffs, output);
+            }
+            ColorSpace::RgbaNoGamma => {
+                yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
+            }
+            ColorSpace::RgbxNoGamma => {
+                yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
             }
         }
 
@@ -1295,6 +1611,36 @@ impl OilScale {
                     &coeffs_y,
                 );
             }
+            ColorSpace::RgbNoGamma => {
+                scale_down_rgb_nogamma(
+                    input,
+                    &mut self.sums_y,
+                    self.out_width,
+                    &self.coeffs_x,
+                    &self.borders_x,
+                    &coeffs_y,
+                );
+            }
+            ColorSpace::RgbaNoGamma => {
+                scale_down_rgba_nogamma(
+                    input,
+                    &mut self.sums_y,
+                    self.out_width,
+                    &self.coeffs_x,
+                    &self.borders_x,
+                    &coeffs_y,
+                );
+            }
+            ColorSpace::RgbxNoGamma => {
+                scale_down_rgbx_nogamma(
+                    input,
+                    &mut self.sums_y,
+                    self.out_width,
+                    &self.coeffs_x,
+                    &self.borders_x,
+                    &coeffs_y,
+                );
+            }
         }
 
         self.borders_y[self.out_pos as usize] -= 1;
@@ -1358,7 +1704,7 @@ impl OilScale {
                 #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output);
             }
-            ColorSpace::G | ColorSpace::CMYK => {
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
                     sse2::yscale_out_g(&mut self.sums_y, sl_len, output);
@@ -1373,6 +1719,12 @@ impl OilScale {
                 }
                 #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_out_ga(&mut self.sums_y, self.out_width as usize, output);
+            }
+            ColorSpace::RgbaNoGamma => {
+                yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output);
+            }
+            ColorSpace::RgbxNoGamma => {
+                yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output);
             }
         }
     }

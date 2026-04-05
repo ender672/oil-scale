@@ -14,6 +14,12 @@ pub enum ColorSpace {
     RGBX,
     /// CMYK — no color space conversions
     CMYK,
+    /// RGB without sRGB gamma — no linearization during processing
+    RgbNoGamma,
+    /// RGBA without sRGB gamma — premultiplied alpha, no linearization
+    RgbaNoGamma,
+    /// RGBX without sRGB gamma — 4 bytes per pixel, 4th byte ignored, no linearization
+    RgbxNoGamma,
 }
 
 impl ColorSpace {
@@ -22,8 +28,9 @@ impl ColorSpace {
         match self {
             ColorSpace::G => 1,
             ColorSpace::GA => 2,
-            ColorSpace::RGB => 3,
-            ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK => 4,
+            ColorSpace::RGB | ColorSpace::RgbNoGamma => 3,
+            ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK
+            | ColorSpace::RgbaNoGamma | ColorSpace::RgbxNoGamma => 4,
         }
     }
 }
