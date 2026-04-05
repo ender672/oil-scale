@@ -2323,6 +2323,810 @@ pub unsafe fn yscale_out_ga(sums: &mut [f32], width: u32, out: &mut [u8]) {
     }
 }
 
+// --- NOGAMMA SSE2 ---
+
+/// SSE2 horizontal upscale for RGB_NOGAMMA.
+/// Like xscale_up_rgb but uses i2f (identity) instead of s2l (sRGB linearization).
+#[target_feature(enable = "sse2")]
+pub unsafe fn xscale_up_rgb_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let mut smp_r = _mm_setzero_ps();
+    let mut smp_g = _mm_setzero_ps();
+    let mut smp_b = _mm_setzero_ps();
+    let out_ptr = out.as_mut_ptr();
+    let coeff_ptr = coeff_buf.as_ptr();
+    let border_ptr = border_buf.as_ptr();
+    let in_ptr = input.as_ptr();
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 3;
+
+        smp_r = push_f_sse2(smp_r, *i2f.add(*in_ptr.add(in_base) as usize));
+        smp_g = push_f_sse2(smp_g, *i2f.add(*in_ptr.add(in_base + 1) as usize));
+        smp_b = push_f_sse2(smp_b, *i2f.add(*in_ptr.add(in_base + 2) as usize));
+
+        let mut j = *border_ptr.add(i);
+
+        while j >= 2 {
+            let c0 = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+            let c1 = _mm_loadu_ps(coeff_ptr.add(coeff_idx + 4));
+
+            let t2_r = dot4x2(smp_r, c0, c1);
+            let t2_g = dot4x2(smp_g, c0, c1);
+            let t2_b = dot4x2(smp_b, c0, c1);
+
+            // Store interleaved: [R0, G0, B0, R1, G1, B1]
+            *out_ptr.add(out_idx)     = _mm_cvtss_f32(t2_r);
+            *out_ptr.add(out_idx + 1) = _mm_cvtss_f32(t2_g);
+            *out_ptr.add(out_idx + 2) = _mm_cvtss_f32(t2_b);
+            *out_ptr.add(out_idx + 3) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_r, t2_r, mm_shuffle(1, 1, 1, 1)),
+            );
+            *out_ptr.add(out_idx + 4) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_g, t2_g, mm_shuffle(1, 1, 1, 1)),
+            );
+            *out_ptr.add(out_idx + 5) = _mm_cvtss_f32(
+                _mm_shuffle_ps(t2_b, t2_b, mm_shuffle(1, 1, 1, 1)),
+            );
+
+            out_idx += 6;
+            coeff_idx += 8;
+            j -= 2;
+        }
+
+        if j > 0 {
+            let coeffs = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+
+            *out_ptr.add(out_idx)     = dot4(smp_r, coeffs);
+            *out_ptr.add(out_idx + 1) = dot4(smp_g, coeffs);
+            *out_ptr.add(out_idx + 2) = dot4(smp_b, coeffs);
+
+            out_idx += 3;
+            coeff_idx += 4;
+        }
+    }
+}
+
+/// SSE2 horizontal upscale for RGBA_NOGAMMA (premultiplied alpha, no gamma).
+#[target_feature(enable = "sse2")]
+pub unsafe fn xscale_up_rgba_nogamma(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let mut smp_r = _mm_setzero_ps();
+    let mut smp_g = _mm_setzero_ps();
+    let mut smp_b = _mm_setzero_ps();
+    let mut smp_a = _mm_setzero_ps();
+    let out_ptr = out.as_mut_ptr();
+    let coeff_ptr = coeff_buf.as_ptr();
+    let border_ptr = border_buf.as_ptr();
+    let in_ptr = input.as_ptr();
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 4;
+        let alpha_new = *i2f.add(*in_ptr.add(in_base + 3) as usize);
+
+        smp_a = push_f_sse2(smp_a, alpha_new);
+        smp_r = push_f_sse2(smp_r, alpha_new * *i2f.add(*in_ptr.add(in_base) as usize));
+        smp_g = push_f_sse2(smp_g, alpha_new * *i2f.add(*in_ptr.add(in_base + 1) as usize));
+        smp_b = push_f_sse2(smp_b, alpha_new * *i2f.add(*in_ptr.add(in_base + 2) as usize));
+
+        let mut j = *border_ptr.add(i);
+
+        while j >= 2 {
+            let c0 = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+            let c1 = _mm_loadu_ps(coeff_ptr.add(coeff_idx + 4));
+
+            let t2_r = dot4x2(smp_r, c0, c1);
+            let t2_g = dot4x2(smp_g, c0, c1);
+            let t2_b = dot4x2(smp_b, c0, c1);
+            let t2_a = dot4x2(smp_a, c0, c1);
+
+            let rg = _mm_unpacklo_ps(t2_r, t2_g);
+            let ba = _mm_unpacklo_ps(t2_b, t2_a);
+            _mm_storeu_ps(out_ptr.add(out_idx), _mm_movelh_ps(rg, ba));
+            _mm_storeu_ps(out_ptr.add(out_idx + 4), _mm_movehl_ps(ba, rg));
+
+            out_idx += 8;
+            coeff_idx += 8;
+            j -= 2;
+        }
+
+        if j > 0 {
+            let coeffs = _mm_loadu_ps(coeff_ptr.add(coeff_idx));
+
+            *out_ptr.add(out_idx)     = dot4(smp_r, coeffs);
+            *out_ptr.add(out_idx + 1) = dot4(smp_g, coeffs);
+            *out_ptr.add(out_idx + 2) = dot4(smp_b, coeffs);
+            *out_ptr.add(out_idx + 3) = dot4(smp_a, coeffs);
+
+            out_idx += 4;
+            coeff_idx += 4;
+        }
+    }
+}
+
+/// SSE2 vertical upscale for RGBA_NOGAMMA.
+/// Un-premultiplies, clamps, scales to 255, packs to bytes (no sRGB LUT).
+#[target_feature(enable = "sse2")]
+pub unsafe fn yscale_up_rgba_nogamma(
+    lines: [&[f32]; 4],
+    len: usize,
+    coeffs: &[f32],
+    out: &mut [u8],
+) {
+    let c0 = _mm_set1_ps(coeffs[0]);
+    let c1 = _mm_set1_ps(coeffs[1]);
+    let c2 = _mm_set1_ps(coeffs[2]);
+    let c3 = _mm_set1_ps(coeffs[3]);
+    let scale = _mm_set1_ps(255.0);
+    let half = _mm_set1_ps(0.5);
+    let one = _mm_set1_ps(1.0);
+    let zero = _mm_setzero_ps();
+
+    let l0 = lines[0].as_ptr();
+    let l1 = lines[1].as_ptr();
+    let l2 = lines[2].as_ptr();
+    let l3 = lines[3].as_ptr();
+    let out_ptr = out.as_mut_ptr();
+
+    let mut i = 0;
+
+    // Process 2 RGBA pixels (8 floats) at a time
+    while i + 7 < len {
+        let sum_a = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i)))));
+
+        let sum_b = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i + 4))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i + 4)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i + 4))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i + 4)))));
+
+        // Unpremultiply pixel 1
+        let alpha_v = _mm_shuffle_ps(sum_a, sum_a, mm_shuffle(3, 3, 3, 3));
+        let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
+        let alpha = _mm_cvtss_f32(alpha_v);
+        let mut vals = sum_a;
+        if alpha != 0.0 {
+            vals = _mm_mul_ps(vals, _mm_rcp_ps(alpha_v));
+        }
+        let clamped = _mm_min_ps(_mm_max_ps(vals, zero), one);
+        // Replace alpha channel with clamped alpha
+        let hi = _mm_shuffle_ps(clamped, alpha_v, mm_shuffle(0, 0, 2, 2));
+        let clamped = _mm_shuffle_ps(clamped, hi, mm_shuffle(2, 0, 1, 0));
+        let idx_a = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped, scale), half));
+
+        // Unpremultiply pixel 2
+        let alpha_v2 = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(3, 3, 3, 3));
+        let alpha_v2 = _mm_min_ps(_mm_max_ps(alpha_v2, zero), one);
+        let alpha2 = _mm_cvtss_f32(alpha_v2);
+        let mut vals2 = sum_b;
+        if alpha2 != 0.0 {
+            vals2 = _mm_mul_ps(vals2, _mm_rcp_ps(alpha_v2));
+        }
+        let clamped2 = _mm_min_ps(_mm_max_ps(vals2, zero), one);
+        let hi2 = _mm_shuffle_ps(clamped2, alpha_v2, mm_shuffle(0, 0, 2, 2));
+        let clamped2 = _mm_shuffle_ps(clamped2, hi2, mm_shuffle(2, 0, 1, 0));
+        let idx_b = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped2, scale), half));
+
+        // Pack both pixels to bytes and store 8 bytes
+        let packed = _mm_packs_epi32(idx_a, idx_b);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(i) as *mut __m128i, packed);
+
+        i += 8;
+    }
+
+    // Remaining pixels one at a time
+    while i < len {
+        let sum = _mm_add_ps(
+            _mm_add_ps(_mm_mul_ps(c0, _mm_loadu_ps(l0.add(i))),
+                       _mm_mul_ps(c1, _mm_loadu_ps(l1.add(i)))),
+            _mm_add_ps(_mm_mul_ps(c2, _mm_loadu_ps(l2.add(i))),
+                       _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i)))));
+
+        let alpha_v = _mm_shuffle_ps(sum, sum, mm_shuffle(3, 3, 3, 3));
+        let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
+        let alpha = _mm_cvtss_f32(alpha_v);
+        let mut vals = sum;
+        if alpha != 0.0 {
+            vals = _mm_mul_ps(vals, _mm_rcp_ps(alpha_v));
+        }
+        let clamped = _mm_min_ps(_mm_max_ps(vals, zero), one);
+        let hi = _mm_shuffle_ps(clamped, alpha_v, mm_shuffle(0, 0, 2, 2));
+        let clamped = _mm_shuffle_ps(clamped, hi, mm_shuffle(2, 0, 1, 0));
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped, scale), half));
+        let packed = _mm_packs_epi32(idx, idx);
+        let packed = _mm_packus_epi16(packed, packed);
+        *(out_ptr.add(i) as *mut i32) = _mm_cvtsi128_si32(packed);
+
+        i += 4;
+    }
+}
+
+/// SSE2 output for downscaled RGBA_NOGAMMA.
+/// Un-premultiplies, clamps, scales to 255, packs to bytes (no sRGB LUT).
+#[target_feature(enable = "sse2")]
+pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u8]) {
+    let scale = _mm_set1_ps(255.0);
+    let half = _mm_set1_ps(0.5);
+    let one = _mm_set1_ps(1.0);
+    let zero = _mm_setzero_ps();
+
+    let s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    let mut i = 0u32;
+
+    // Process 2 pixels at a time
+    while i + 1 < width {
+        let sp = s_ptr.add(s_idx) as *mut __m128i;
+
+        // Pixel 1: load 4 accumulators
+        let v0 = _mm_loadu_si128(sp);
+        let v1 = _mm_loadu_si128(sp.add(1));
+        let v2 = _mm_loadu_si128(sp.add(2));
+        let v3 = _mm_loadu_si128(sp.add(3));
+
+        let f0 = _mm_castsi128_ps(v0);
+        let f1 = _mm_castsi128_ps(v1);
+        let f2 = _mm_castsi128_ps(v2);
+        let f3 = _mm_castsi128_ps(v3);
+        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
+        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
+        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+
+        let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
+        let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
+        let alpha = _mm_cvtss_f32(alpha_v);
+        let mut rgb_vals = vals;
+        if alpha != 0.0 {
+            rgb_vals = _mm_mul_ps(rgb_vals, _mm_rcp_ps(alpha_v));
+        }
+        rgb_vals = _mm_min_ps(_mm_max_ps(rgb_vals, zero), one);
+        let hi = _mm_shuffle_ps(rgb_vals, alpha_v, mm_shuffle(0, 0, 2, 2));
+        let rgb_vals = _mm_shuffle_ps(rgb_vals, hi, mm_shuffle(2, 0, 1, 0));
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(rgb_vals, scale), half));
+
+        // Shift pixel 1 accumulators
+        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
+        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
+        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+
+        // Pixel 2: load 4 accumulators
+        let sp2 = s_ptr.add(s_idx + 16) as *mut __m128i;
+        let w0 = _mm_loadu_si128(sp2);
+        let w1 = _mm_loadu_si128(sp2.add(1));
+        let w2 = _mm_loadu_si128(sp2.add(2));
+        let w3 = _mm_loadu_si128(sp2.add(3));
+
+        let g0 = _mm_castsi128_ps(w0);
+        let g1 = _mm_castsi128_ps(w1);
+        let g2 = _mm_castsi128_ps(w2);
+        let g3 = _mm_castsi128_ps(w3);
+        let ab2 = _mm_shuffle_ps(g0, g1, mm_shuffle(0, 0, 0, 0));
+        let cd2 = _mm_shuffle_ps(g2, g3, mm_shuffle(0, 0, 0, 0));
+        let vals2 = _mm_shuffle_ps(ab2, cd2, mm_shuffle(2, 0, 2, 0));
+
+        let alpha_v2 = _mm_shuffle_ps(vals2, vals2, mm_shuffle(3, 3, 3, 3));
+        let alpha_v2 = _mm_min_ps(_mm_max_ps(alpha_v2, zero), one);
+        let alpha2 = _mm_cvtss_f32(alpha_v2);
+        let mut rgb_vals2 = vals2;
+        if alpha2 != 0.0 {
+            rgb_vals2 = _mm_mul_ps(rgb_vals2, _mm_rcp_ps(alpha_v2));
+        }
+        rgb_vals2 = _mm_min_ps(_mm_max_ps(rgb_vals2, zero), one);
+        let hi2 = _mm_shuffle_ps(rgb_vals2, alpha_v2, mm_shuffle(0, 0, 2, 2));
+        let rgb_vals2 = _mm_shuffle_ps(rgb_vals2, hi2, mm_shuffle(2, 0, 1, 0));
+        let idx2 = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(rgb_vals2, scale), half));
+
+        // Pack both pixels and store 8 bytes
+        let packed = _mm_packs_epi32(idx, idx2);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(o_idx) as *mut __m128i, packed);
+
+        // Shift pixel 2 accumulators
+        _mm_storeu_si128(sp2, _mm_srli_si128(w0, 4));
+        _mm_storeu_si128(sp2.add(1), _mm_srli_si128(w1, 4));
+        _mm_storeu_si128(sp2.add(2), _mm_srli_si128(w2, 4));
+        _mm_storeu_si128(sp2.add(3), _mm_srli_si128(w3, 4));
+
+        s_idx += 32;
+        o_idx += 8;
+        i += 2;
+    }
+
+    // Remaining pixel
+    while i < width {
+        let sp = s_ptr.add(s_idx) as *mut __m128i;
+
+        let v0 = _mm_loadu_si128(sp);
+        let v1 = _mm_loadu_si128(sp.add(1));
+        let v2 = _mm_loadu_si128(sp.add(2));
+        let v3 = _mm_loadu_si128(sp.add(3));
+
+        let f0 = _mm_castsi128_ps(v0);
+        let f1 = _mm_castsi128_ps(v1);
+        let f2 = _mm_castsi128_ps(v2);
+        let f3 = _mm_castsi128_ps(v3);
+        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
+        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
+        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+
+        let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
+        let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
+        let alpha = _mm_cvtss_f32(alpha_v);
+        let mut rgb_vals = vals;
+        if alpha != 0.0 {
+            rgb_vals = _mm_mul_ps(rgb_vals, _mm_rcp_ps(alpha_v));
+        }
+        rgb_vals = _mm_min_ps(_mm_max_ps(rgb_vals, zero), one);
+        let hi = _mm_shuffle_ps(rgb_vals, alpha_v, mm_shuffle(0, 0, 2, 2));
+        let rgb_vals = _mm_shuffle_ps(rgb_vals, hi, mm_shuffle(2, 0, 1, 0));
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(rgb_vals, scale), half));
+        let packed = _mm_packs_epi32(idx, idx);
+        let packed = _mm_packus_epi16(packed, packed);
+        *(out_ptr.add(o_idx) as *mut i32) = _mm_cvtsi128_si32(packed);
+
+        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
+        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
+        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+
+        s_idx += 16;
+        o_idx += 4;
+        i += 1;
+    }
+}
+
+/// SSE2 output for downscaled RGBX_NOGAMMA.
+/// Clamps RGB to [0,1], scales to 255, X byte always 255 (no sRGB LUT).
+#[target_feature(enable = "sse2")]
+pub unsafe fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: u32, out: &mut [u8]) {
+    let scale = _mm_set1_ps(255.0);
+    let half = _mm_set1_ps(0.5);
+    let zero = _mm_setzero_ps();
+    let one_f = _mm_set1_ps(1.0);
+
+    let s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        let sp = s_ptr.add(s_idx) as *mut __m128i;
+
+        let v0 = _mm_loadu_si128(sp);
+        let v1 = _mm_loadu_si128(sp.add(1));
+        let v2 = _mm_loadu_si128(sp.add(2));
+
+        let f0 = _mm_castsi128_ps(v0);
+        let f1 = _mm_castsi128_ps(v1);
+        let f2 = _mm_castsi128_ps(v2);
+        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
+        let cd = _mm_shuffle_ps(f2, f2, mm_shuffle(0, 0, 0, 0));
+        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+
+        // Clamp to [0, 1], scale to [0, 255], round
+        let vals = _mm_max_ps(vals, zero);
+        let vals = _mm_min_ps(vals, one_f);
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(vals, scale), half));
+
+        *out_ptr.add(o_idx)     = _mm_cvtsi128_si32(idx) as u8;
+        *out_ptr.add(o_idx + 1) = _mm_cvtsi128_si32(_mm_srli_si128(idx, 4)) as u8;
+        *out_ptr.add(o_idx + 2) = _mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as u8;
+        *out_ptr.add(o_idx + 3) = 255;
+
+        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
+        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
+        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
+
+/// SSE2 downscale for RGB_NOGAMMA: horizontal x-filtering + y-accumulation (no gamma).
+#[target_feature(enable = "sse2")]
+pub unsafe fn scale_down_rgb_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+
+    let mut sum_r = _mm_setzero_ps();
+    let mut sum_g = _mm_setzero_ps();
+    let mut sum_b = _mm_setzero_ps();
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+
+        if border >= 4 {
+            let mut sum_r2 = _mm_setzero_ps();
+            let mut sum_g2 = _mm_setzero_ps();
+            let mut sum_b2 = _mm_setzero_ps();
+
+            let mut j = 0;
+            while j + 1 < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let cx2 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize));
+                sum_r2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_r2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize));
+                sum_g2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_g2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize));
+                sum_b2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_b2);
+
+                in_idx += 6;
+                cx_idx += 8;
+                j += 2;
+            }
+
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                in_idx += 3;
+                cx_idx += 4;
+                j += 1;
+            }
+
+            sum_r = _mm_add_ps(sum_r, sum_r2);
+            sum_g = _mm_add_ps(sum_g, sum_g2);
+            sum_b = _mm_add_ps(sum_b, sum_b2);
+        } else {
+            let mut j = 0;
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                in_idx += 3;
+                cx_idx += 4;
+                j += 1;
+            }
+        }
+
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
+        sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
+        sum_b = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_b), 4));
+    }
+}
+
+/// SSE2 downscale for RGBX_NOGAMMA: horizontal x-filtering + y-accumulation (no gamma).
+#[target_feature(enable = "sse2")]
+pub unsafe fn scale_down_rgbx_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+
+    let mut sum_r = _mm_setzero_ps();
+    let mut sum_g = _mm_setzero_ps();
+    let mut sum_b = _mm_setzero_ps();
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+
+        if border >= 2 {
+            let mut sum_r2 = _mm_setzero_ps();
+            let mut sum_g2 = _mm_setzero_ps();
+            let mut sum_b2 = _mm_setzero_ps();
+
+            let mut j = 0;
+            while j + 1 < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let cx2 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize));
+                sum_r2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_r2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize));
+                sum_g2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_g2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 6) as usize));
+                sum_b2 = _mm_add_ps(_mm_mul_ps(cx2, s), sum_b2);
+
+                in_idx += 8;
+                cx_idx += 8;
+                j += 2;
+            }
+
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+
+            sum_r = _mm_add_ps(sum_r, sum_r2);
+            sum_g = _mm_add_ps(sum_g, sum_g2);
+            sum_b = _mm_add_ps(sum_b, sum_b2);
+        } else {
+            let mut j = 0;
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx, s), sum_b);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+        }
+
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+        sy_idx += 4;
+
+        // Skip X channel y-accumulation
+        sy_idx += 4;
+
+        sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
+        sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
+        sum_b = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_b), 4));
+    }
+}
+
+/// SSE2 downscale for RGBA_NOGAMMA: horizontal x-filtering with premultiplied alpha + y-accumulation (no gamma).
+#[target_feature(enable = "sse2")]
+pub unsafe fn scale_down_rgba_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+
+    let mut sum_r = _mm_setzero_ps();
+    let mut sum_g = _mm_setzero_ps();
+    let mut sum_b = _mm_setzero_ps();
+    let mut sum_a = _mm_setzero_ps();
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+
+        if border >= 4 {
+            let mut sum_r2 = _mm_setzero_ps();
+            let mut sum_g2 = _mm_setzero_ps();
+            let mut sum_b2 = _mm_setzero_ps();
+            let mut sum_a2 = _mm_setzero_ps();
+
+            let mut j = 0;
+            while j + 1 < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let cx2 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
+
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
+                sum_a = _mm_add_ps(cx_a, sum_a);
+
+                let cx2_a = _mm_mul_ps(cx2, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 7) as usize)));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize));
+                sum_r2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_r2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize));
+                sum_g2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_g2);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 6) as usize));
+                sum_b2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_b2);
+                sum_a2 = _mm_add_ps(cx2_a, sum_a2);
+
+                in_idx += 8;
+                cx_idx += 8;
+                j += 2;
+            }
+
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
+                sum_a = _mm_add_ps(cx_a, sum_a);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+
+            sum_r = _mm_add_ps(sum_r, sum_r2);
+            sum_g = _mm_add_ps(sum_g, sum_g2);
+            sum_b = _mm_add_ps(sum_b, sum_b2);
+            sum_a = _mm_add_ps(sum_a, sum_a2);
+        } else {
+            let mut j = 0;
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
+                sum_a = _mm_add_ps(cx_a, sum_a);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+        }
+
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
+        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
+        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
+        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
+        sy_idx += 4;
+
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_a, sum_a, mm_shuffle(0, 0, 0, 0));
+        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
+        sy_idx += 4;
+
+        sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
+        sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
+        sum_b = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_b), 4));
+        sum_a = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_a), 4));
+    }
+}
+
 // --- Helpers ---
 
 /// SSE2 push_f: shift left by one float, insert new value at position 3.

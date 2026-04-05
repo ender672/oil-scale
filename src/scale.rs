@@ -1365,6 +1365,17 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::xscale_up_rgb_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 xscale_up_rgb_nogamma(
                     input,
                     self.in_width,
@@ -1374,6 +1385,17 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbaNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::xscale_up_rgba_nogamma(
+                        input,
+                        self.in_width,
+                        &mut self.rb[rb_offset..rb_offset + sl_len],
+                        &self.coeffs_x,
+                        &self.borders_x,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 xscale_up_rgba_nogamma(
                     input,
                     self.in_width,
@@ -1459,6 +1481,11 @@ impl OilScale {
                 yscale_up_ga(lines, sl_len, coeffs, output);
             }
             ColorSpace::RgbaNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
             }
             ColorSpace::RgbxNoGamma => {
@@ -1612,6 +1639,18 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::scale_down_rgb_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 scale_down_rgb_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1622,6 +1661,18 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbaNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::scale_down_rgba_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 scale_down_rgba_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1632,6 +1683,18 @@ impl OilScale {
                 );
             }
             ColorSpace::RgbxNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::scale_down_rgbx_nogamma(
+                        input,
+                        &mut self.sums_y,
+                        self.out_width,
+                        &self.coeffs_x,
+                        &self.borders_x,
+                        &coeffs_y,
+                    );
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 scale_down_rgbx_nogamma(
                     input,
                     &mut self.sums_y,
@@ -1721,9 +1784,19 @@ impl OilScale {
                 yscale_out_ga(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::RgbaNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output);
             }
             ColorSpace::RgbxNoGamma => {
+                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+                unsafe {
+                    sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
+                }
+                #[cfg(any(not(target_arch = "x86_64"), feature = "force-scalar"))]
                 yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output);
             }
         }
