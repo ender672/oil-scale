@@ -3,6 +3,8 @@ use crate::kernel;
 use crate::srgb;
 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
 use crate::sse2;
+#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+use crate::avx2;
 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
 use crate::neon;
 
@@ -1804,14 +1806,36 @@ impl OilScale {
             ColorSpace::G => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::scale_down_g(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
+                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                        if self.in_width >= self.out_width * 2 {
+                            avx2::scale_down_g_heavy(
+                                input,
+                                &mut self.sums_y,
+                                self.out_width,
+                                &self.coeffs_x,
+                                &self.borders_x,
+                                &coeffs_y,
+                            );
+                        } else {
+                            avx2::scale_down_g(
+                                input,
+                                &mut self.sums_y,
+                                self.out_width,
+                                &self.coeffs_x,
+                                &self.borders_x,
+                                &coeffs_y,
+                            );
+                        }
+                    } else {
+                        sse2::scale_down_g(
+                            input,
+                            &mut self.sums_y,
+                            self.out_width,
+                            &self.coeffs_x,
+                            &self.borders_x,
+                            &coeffs_y,
+                        );
+                    }
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
@@ -1936,15 +1960,27 @@ impl OilScale {
             ColorSpace::RgbaNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::scale_down_rgba_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
+                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                        avx2::scale_down_rgba_nogamma(
+                            input,
+                            &mut self.sums_y,
+                            self.out_width,
+                            &self.coeffs_x,
+                            &self.borders_x,
+                            &coeffs_y,
+                            self.sums_y_tap,
+                        );
+                    } else {
+                        sse2::scale_down_rgba_nogamma(
+                            input,
+                            &mut self.sums_y,
+                            self.out_width,
+                            &self.coeffs_x,
+                            &self.borders_x,
+                            &coeffs_y,
+                            self.sums_y_tap,
+                        );
+                    }
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
@@ -1971,15 +2007,27 @@ impl OilScale {
             ColorSpace::RgbxNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::scale_down_rgbx_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
+                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                        avx2::scale_down_rgbx_nogamma(
+                            input,
+                            &mut self.sums_y,
+                            self.out_width,
+                            &self.coeffs_x,
+                            &self.borders_x,
+                            &coeffs_y,
+                            self.sums_y_tap,
+                        );
+                    } else {
+                        sse2::scale_down_rgbx_nogamma(
+                            input,
+                            &mut self.sums_y,
+                            self.out_width,
+                            &self.coeffs_x,
+                            &self.borders_x,
+                            &coeffs_y,
+                            self.sums_y_tap,
+                        );
+                    }
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
@@ -2106,7 +2154,11 @@ impl OilScale {
             ColorSpace::RgbaNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                        avx2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    } else {
+                        sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    }
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
@@ -2118,7 +2170,11 @@ impl OilScale {
             ColorSpace::RgbxNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                        avx2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    } else {
+                        sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                    }
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {

@@ -47,6 +47,8 @@ pub(crate) mod srgb;
 pub(crate) mod kernel;
 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
 pub(crate) mod sse2;
+#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+pub(crate) mod avx2;
 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
 pub(crate) mod neon;
 
