@@ -20,6 +20,8 @@ pub enum ColorSpace {
     RgbaNoGamma,
     /// RGBX without sRGB gamma — 4 bytes per pixel, 4th byte ignored, no linearization
     RgbxNoGamma,
+    /// ARGB — alpha-first sRGB layout, premultiplied alpha with sRGB-to-linear conversion
+    ARGB,
 }
 
 impl ColorSpace {
@@ -30,7 +32,8 @@ impl ColorSpace {
             ColorSpace::GA => 2,
             ColorSpace::RGB | ColorSpace::RgbNoGamma => 3,
             ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::CMYK
-            | ColorSpace::RgbaNoGamma | ColorSpace::RgbxNoGamma => 4,
+            | ColorSpace::RgbaNoGamma | ColorSpace::RgbxNoGamma
+            | ColorSpace::ARGB => 4,
         }
     }
 }

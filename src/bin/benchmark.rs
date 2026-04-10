@@ -155,6 +155,19 @@ fn rgba_to_ga(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     ga
 }
 
+/// Convert RGBA pixel buffer to ARGB by reordering channels.
+fn rgba_to_argb(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let num_pixels = width as usize * height as usize;
+    let mut argb = Vec::with_capacity(num_pixels * 4);
+    for i in 0..num_pixels {
+        argb.push(rgba[i * 4 + 3]); // A
+        argb.push(rgba[i * 4]);     // R
+        argb.push(rgba[i * 4 + 1]); // G
+        argb.push(rgba[i * 4 + 2]); // B
+    }
+    argb
+}
+
 /// Convert RGBA pixel buffer to RGBX by replacing alpha with 0xFF.
 fn rgba_to_rgbx(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     let num_pixels = width as usize * height as usize;
@@ -206,6 +219,7 @@ fn main() {
         ("RGB_NOGAMMA", ColorSpace::RgbNoGamma),
         ("RGBA_NOGAMMA", ColorSpace::RgbaNoGamma),
         ("RGBX_NOGAMMA", ColorSpace::RgbxNoGamma),
+        ("ARGB", ColorSpace::ARGB),
     ];
 
     // Filter to a specific colorspace if requested
@@ -220,12 +234,13 @@ fn main() {
                     ColorSpace::GA => rgba_to_ga(&image.pixels, image.width, image.height),
                     ColorSpace::RGB | ColorSpace::RgbNoGamma => rgba_to_rgb(&image.pixels, image.width, image.height),
                     ColorSpace::RGBX | ColorSpace::RgbxNoGamma => rgba_to_rgbx(&image.pixels, image.width, image.height),
+                    ColorSpace::ARGB => rgba_to_argb(&image.pixels, image.width, image.height),
                     _ => image.pixels.clone(),
                 };
                 do_bench_sizes(n, &pixels, image.width, image.height, *cs, iterations, mode);
             }
             None => {
-                eprintln!("Colorspace not recognized. Options: G, GA, RGB, RGBA, RGBX, CMYK, RGB_NOGAMMA, RGBA_NOGAMMA, RGBX_NOGAMMA");
+                eprintln!("Colorspace not recognized. Options: G, GA, RGB, RGBA, RGBX, CMYK, RGB_NOGAMMA, RGBA_NOGAMMA, RGBX_NOGAMMA, ARGB");
                 process::exit(1);
             }
         }
@@ -236,6 +251,7 @@ fn main() {
                 ColorSpace::GA => rgba_to_ga(&image.pixels, image.width, image.height),
                 ColorSpace::RGB | ColorSpace::RgbNoGamma => rgba_to_rgb(&image.pixels, image.width, image.height),
                 ColorSpace::RGBX | ColorSpace::RgbxNoGamma => rgba_to_rgbx(&image.pixels, image.width, image.height),
+                ColorSpace::ARGB => rgba_to_argb(&image.pixels, image.width, image.height),
                 _ => image.pixels.clone(),
             };
             do_bench_sizes(

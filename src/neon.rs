@@ -873,6 +873,402 @@ pub unsafe fn yscale_out_rgba(sums: &mut [f32], width: u32, out: &mut [u8]) {
     }
 }
 
+// --- ARGB NEON ---
+
+/// NEON horizontal upscale for ARGB (alpha-first byte order).
+/// Alpha at input byte 0, RGB at input bytes 1-3. Internal float layout is [R,G,B,A].
+#[target_feature(enable = "neon")]
+pub unsafe fn xscale_up_argb(
+    input: &[u8],
+    width_in: u32,
+    out: &mut [f32],
+    coeff_buf: &[f32],
+    border_buf: &[i32],
+) {
+    let tables = srgb::tables();
+    let s2l = tables.s2l.as_ptr();
+    let mut smp_r = vdupq_n_f32(0.0);
+    let mut smp_g = vdupq_n_f32(0.0);
+    let mut smp_b = vdupq_n_f32(0.0);
+    let mut smp_a = vdupq_n_f32(0.0);
+    let out_ptr = out.as_mut_ptr();
+    let coeff_ptr = coeff_buf.as_ptr();
+    let border_ptr = border_buf.as_ptr();
+    let in_ptr = input.as_ptr();
+    let mut out_idx = 0usize;
+    let mut coeff_idx = 0usize;
+
+    for i in 0..width_in as usize {
+        let in_base = i * 4;
+        let alpha_new = *in_ptr.add(in_base) as f32 / 255.0;
+
+        smp_a = push_f_neon(smp_a, alpha_new);
+        smp_r = push_f_neon(smp_r, alpha_new * *s2l.add(*in_ptr.add(in_base + 1) as usize));
+        smp_g = push_f_neon(smp_g, alpha_new * *s2l.add(*in_ptr.add(in_base + 2) as usize));
+        smp_b = push_f_neon(smp_b, alpha_new * *s2l.add(*in_ptr.add(in_base + 3) as usize));
+
+        let mut j = *border_ptr.add(i);
+
+        while j >= 2 {
+            let c0 = vld1q_f32(coeff_ptr.add(coeff_idx));
+            let c1 = vld1q_f32(coeff_ptr.add(coeff_idx + 4));
+
+            let t2_r = dot4x2(smp_r, c0, c1);
+            let t2_g = dot4x2(smp_g, c0, c1);
+            let t2_b = dot4x2(smp_b, c0, c1);
+            let t2_a = dot4x2(smp_a, c0, c1);
+
+            let rg = vzip1q_f32(t2_r, t2_g);
+            let ba = vzip1q_f32(t2_b, t2_a);
+            vst1q_f32(out_ptr.add(out_idx), vcombine_f32(vget_low_f32(rg), vget_low_f32(ba)));
+            vst1q_f32(out_ptr.add(out_idx + 4), vcombine_f32(vget_high_f32(rg), vget_high_f32(ba)));
+
+            out_idx += 8;
+            coeff_idx += 8;
+            j -= 2;
+        }
+
+        if j > 0 {
+            let coeffs = vld1q_f32(coeff_ptr.add(coeff_idx));
+
+            *out_ptr.add(out_idx)     = dot4(smp_r, coeffs);
+            *out_ptr.add(out_idx + 1) = dot4(smp_g, coeffs);
+            *out_ptr.add(out_idx + 2) = dot4(smp_b, coeffs);
+            *out_ptr.add(out_idx + 3) = dot4(smp_a, coeffs);
+
+            out_idx += 4;
+            coeff_idx += 4;
+        }
+    }
+}
+
+/// NEON vertical upscale for ARGB (premultiplied alpha).
+/// Same blend as RGBA but writes output bytes as [A,R,G,B].
+#[target_feature(enable = "neon")]
+pub unsafe fn yscale_up_argb(
+    lines: [&[f32]; 4],
+    len: usize,
+    coeffs: &[f32],
+    out: &mut [u8],
+) {
+    let tables = srgb::tables();
+    let lut = tables.l2s_ptr();
+    let scale = vdupq_n_f32((tables.l2s_len - 1) as f32);
+    let one = vdupq_n_f32(1.0);
+    let zero = vdupq_n_f32(0.0);
+    let c0 = vdupq_n_f32(coeffs[0]);
+    let c1 = vdupq_n_f32(coeffs[1]);
+    let c2 = vdupq_n_f32(coeffs[2]);
+    let c3 = vdupq_n_f32(coeffs[3]);
+
+    let l0 = lines[0].as_ptr();
+    let l1 = lines[1].as_ptr();
+    let l2 = lines[2].as_ptr();
+    let l3 = lines[3].as_ptr();
+    let out_ptr = out.as_mut_ptr();
+
+    let mut i = 0;
+
+    while i + 11 < len {
+        let sum0 = vfmaq_f32(vfmaq_f32(vfmaq_f32(
+            vmulq_f32(c3, vld1q_f32(l3.add(i))),
+            c2, vld1q_f32(l2.add(i))),
+            c1, vld1q_f32(l1.add(i))),
+            c0, vld1q_f32(l0.add(i)));
+        let sum1 = vfmaq_f32(vfmaq_f32(vfmaq_f32(
+            vmulq_f32(c3, vld1q_f32(l3.add(i + 4))),
+            c2, vld1q_f32(l2.add(i + 4))),
+            c1, vld1q_f32(l1.add(i + 4))),
+            c0, vld1q_f32(l0.add(i + 4)));
+        let sum2 = vfmaq_f32(vfmaq_f32(vfmaq_f32(
+            vmulq_f32(c3, vld1q_f32(l3.add(i + 8))),
+            c2, vld1q_f32(l2.add(i + 8))),
+            c1, vld1q_f32(l1.add(i + 8))),
+            c0, vld1q_f32(l0.add(i + 8)));
+
+        let a0_v = vdupq_laneq_f32::<3>(sum0);
+        let a0_v = vminq_f32(vmaxq_f32(a0_v, zero), one);
+        let a0 = vgetq_lane_f32::<0>(a0_v);
+        let mut vals0 = sum0;
+        if a0 != 0.0 { vals0 = vmulq_f32(vals0, vdivq_f32(vdupq_n_f32(1.0), a0_v)); }
+        let clamped0 = vminq_f32(vmaxq_f32(vals0, zero), one);
+
+        let a1_v = vdupq_laneq_f32::<3>(sum1);
+        let a1_v = vminq_f32(vmaxq_f32(a1_v, zero), one);
+        let a1 = vgetq_lane_f32::<0>(a1_v);
+        let mut vals1 = sum1;
+        if a1 != 0.0 { vals1 = vmulq_f32(vals1, vdivq_f32(vdupq_n_f32(1.0), a1_v)); }
+        let clamped1 = vminq_f32(vmaxq_f32(vals1, zero), one);
+
+        let a2_v = vdupq_laneq_f32::<3>(sum2);
+        let a2_v = vminq_f32(vmaxq_f32(a2_v, zero), one);
+        let a2 = vgetq_lane_f32::<0>(a2_v);
+        let mut vals2 = sum2;
+        if a2 != 0.0 { vals2 = vmulq_f32(vals2, vdivq_f32(vdupq_n_f32(1.0), a2_v)); }
+        let clamped2 = vminq_f32(vmaxq_f32(vals2, zero), one);
+
+        let idx0 = vcvtq_s32_f32(vmulq_f32(clamped0, scale));
+        let idx1 = vcvtq_s32_f32(vmulq_f32(clamped1, scale));
+        let idx2 = vcvtq_s32_f32(vmulq_f32(clamped2, scale));
+
+        // ARGB output: [A, R, G, B]
+        *out_ptr.add(i)      = (a0 * 255.0 + 0.5) as u8;
+        *out_ptr.add(i + 1)  = *lut.offset(vgetq_lane_s32::<0>(idx0) as isize);
+        *out_ptr.add(i + 2)  = *lut.offset(vgetq_lane_s32::<1>(idx0) as isize);
+        *out_ptr.add(i + 3)  = *lut.offset(vgetq_lane_s32::<2>(idx0) as isize);
+        *out_ptr.add(i + 4)  = (a1 * 255.0 + 0.5) as u8;
+        *out_ptr.add(i + 5)  = *lut.offset(vgetq_lane_s32::<0>(idx1) as isize);
+        *out_ptr.add(i + 6)  = *lut.offset(vgetq_lane_s32::<1>(idx1) as isize);
+        *out_ptr.add(i + 7)  = *lut.offset(vgetq_lane_s32::<2>(idx1) as isize);
+        *out_ptr.add(i + 8)  = (a2 * 255.0 + 0.5) as u8;
+        *out_ptr.add(i + 9)  = *lut.offset(vgetq_lane_s32::<0>(idx2) as isize);
+        *out_ptr.add(i + 10) = *lut.offset(vgetq_lane_s32::<1>(idx2) as isize);
+        *out_ptr.add(i + 11) = *lut.offset(vgetq_lane_s32::<2>(idx2) as isize);
+
+        i += 12;
+    }
+
+    while i < len {
+        let sum = vfmaq_f32(vfmaq_f32(vfmaq_f32(
+            vmulq_f32(c3, vld1q_f32(l3.add(i))),
+            c2, vld1q_f32(l2.add(i))),
+            c1, vld1q_f32(l1.add(i))),
+            c0, vld1q_f32(l0.add(i)));
+
+        let alpha_v = vdupq_laneq_f32::<3>(sum);
+        let alpha_v = vminq_f32(vmaxq_f32(alpha_v, zero), one);
+        let alpha = vgetq_lane_f32::<0>(alpha_v);
+
+        let mut vals = sum;
+        if alpha != 0.0 {
+            vals = vmulq_f32(vals, vdivq_f32(vdupq_n_f32(1.0), alpha_v));
+        }
+        let clamped = vminq_f32(vmaxq_f32(vals, zero), one);
+        let idx = vcvtq_s32_f32(vmulq_f32(clamped, scale));
+
+        // ARGB output: [A, R, G, B]
+        *out_ptr.add(i)     = (alpha * 255.0 + 0.5) as u8;
+        *out_ptr.add(i + 1) = *lut.offset(vgetq_lane_s32::<0>(idx) as isize);
+        *out_ptr.add(i + 2) = *lut.offset(vgetq_lane_s32::<1>(idx) as isize);
+        *out_ptr.add(i + 3) = *lut.offset(vgetq_lane_s32::<2>(idx) as isize);
+
+        i += 4;
+    }
+}
+
+/// NEON downscale for ARGB: horizontal x-filtering with premultiplied alpha + y-accumulation.
+/// Alpha at input byte 0, RGB at input bytes 1-3.
+#[target_feature(enable = "neon")]
+pub unsafe fn scale_down_argb(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let s2l = tables.s2l.as_ptr();
+    let i2f = tables.i2f.as_ptr();
+    let cy = vld1q_f32(coeffs_y.as_ptr());
+
+    let mut sum_r = vdupq_n_f32(0.0);
+    let mut sum_g = vdupq_n_f32(0.0);
+    let mut sum_b = vdupq_n_f32(0.0);
+    let mut sum_a = vdupq_n_f32(0.0);
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+
+        if border >= 4 {
+            let mut sum_r2 = vdupq_n_f32(0.0);
+            let mut sum_g2 = vdupq_n_f32(0.0);
+            let mut sum_b2 = vdupq_n_f32(0.0);
+            let mut sum_a2 = vdupq_n_f32(0.0);
+
+            let mut j = 0;
+            while j + 1 < border {
+                let cx = vld1q_f32(cx_ptr.add(cx_idx));
+                let cx2 = vld1q_f32(cx_ptr.add(cx_idx + 4));
+
+                // ARGB: alpha at byte 0
+                let cx_a = vmulq_f32(cx, vdupq_n_f32(*i2f.add(*in_ptr.add(in_idx) as usize)));
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_r = vfmaq_f32(sum_r, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_g = vfmaq_f32(sum_g, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 3) as usize));
+                sum_b = vfmaq_f32(sum_b, cx_a, s);
+
+                sum_a = vaddq_f32(cx_a, sum_a);
+
+                // Second pixel: alpha at byte 4
+                let cx2_a = vmulq_f32(cx2, vdupq_n_f32(*i2f.add(*in_ptr.add(in_idx + 4) as usize)));
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 5) as usize));
+                sum_r2 = vfmaq_f32(sum_r2, cx2_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 6) as usize));
+                sum_g2 = vfmaq_f32(sum_g2, cx2_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 7) as usize));
+                sum_b2 = vfmaq_f32(sum_b2, cx2_a, s);
+
+                sum_a2 = vaddq_f32(cx2_a, sum_a2);
+
+                in_idx += 8;
+                cx_idx += 8;
+                j += 2;
+            }
+
+            while j < border {
+                let cx = vld1q_f32(cx_ptr.add(cx_idx));
+
+                let cx_a = vmulq_f32(cx, vdupq_n_f32(*i2f.add(*in_ptr.add(in_idx) as usize)));
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_r = vfmaq_f32(sum_r, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_g = vfmaq_f32(sum_g, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 3) as usize));
+                sum_b = vfmaq_f32(sum_b, cx_a, s);
+
+                sum_a = vaddq_f32(cx_a, sum_a);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+
+            sum_r = vaddq_f32(sum_r, sum_r2);
+            sum_g = vaddq_f32(sum_g, sum_g2);
+            sum_b = vaddq_f32(sum_b, sum_b2);
+            sum_a = vaddq_f32(sum_a, sum_a2);
+        } else {
+            let mut j = 0;
+            while j < border {
+                let cx = vld1q_f32(cx_ptr.add(cx_idx));
+
+                let cx_a = vmulq_f32(cx, vdupq_n_f32(*i2f.add(*in_ptr.add(in_idx) as usize)));
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_r = vfmaq_f32(sum_r, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_g = vfmaq_f32(sum_g, cx_a, s);
+
+                let s = vdupq_n_f32(*s2l.add(*in_ptr.add(in_idx + 3) as usize));
+                sum_b = vfmaq_f32(sum_b, cx_a, s);
+
+                sum_a = vaddq_f32(cx_a, sum_a);
+
+                in_idx += 4;
+                cx_idx += 4;
+                j += 1;
+            }
+        }
+
+        // Accumulate into y sums: R channel
+        let mut sy = vld1q_f32(sy_ptr.add(sy_idx));
+        let sample = vdupq_laneq_f32::<0>(sum_r);
+        vst1q_f32(sy_ptr.add(sy_idx), vfmaq_f32(sy, cy, sample));
+        sy_idx += 4;
+
+        // G channel
+        sy = vld1q_f32(sy_ptr.add(sy_idx));
+        let sample = vdupq_laneq_f32::<0>(sum_g);
+        vst1q_f32(sy_ptr.add(sy_idx), vfmaq_f32(sy, cy, sample));
+        sy_idx += 4;
+
+        // B channel
+        sy = vld1q_f32(sy_ptr.add(sy_idx));
+        let sample = vdupq_laneq_f32::<0>(sum_b);
+        vst1q_f32(sy_ptr.add(sy_idx), vfmaq_f32(sy, cy, sample));
+        sy_idx += 4;
+
+        // A channel
+        sy = vld1q_f32(sy_ptr.add(sy_idx));
+        let sample = vdupq_laneq_f32::<0>(sum_a);
+        vst1q_f32(sy_ptr.add(sy_idx), vfmaq_f32(sy, cy, sample));
+        sy_idx += 4;
+
+        // shift_left for each channel
+        let zero = vdupq_n_f32(0.0);
+        sum_r = vextq_f32::<1>(sum_r, zero);
+        sum_g = vextq_f32::<1>(sum_g, zero);
+        sum_b = vextq_f32::<1>(sum_b, zero);
+        sum_a = vextq_f32::<1>(sum_a, zero);
+    }
+}
+
+/// NEON output for downscaled ARGB: un-premultiply, convert RGB through l2s LUT, alpha to byte.
+/// Writes output bytes as [A,R,G,B].
+#[target_feature(enable = "neon")]
+pub unsafe fn yscale_out_argb(sums: &mut [f32], width: u32, out: &mut [u8]) {
+    let tables = srgb::tables();
+    let lut = tables.l2s_ptr();
+    let scale = vdupq_n_f32((tables.l2s_len - 1) as f32);
+    let one = vdupq_n_f32(1.0);
+    let zero = vdupq_n_f32(0.0);
+
+    let s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        let sp = s_ptr.add(s_idx);
+
+        let f0 = vld1q_f32(sp);
+        let f1 = vld1q_f32(sp.add(4));
+        let f2 = vld1q_f32(sp.add(8));
+        let f3 = vld1q_f32(sp.add(12));
+
+        let vals = gather_lane0(f0, f1, f2, f3);
+
+        let alpha_v = vdupq_laneq_f32::<3>(vals);
+        let alpha_v = vminq_f32(vmaxq_f32(alpha_v, zero), one);
+        let alpha = vgetq_lane_f32::<0>(alpha_v);
+
+        let mut rgb_vals = vals;
+        if alpha != 0.0 {
+            rgb_vals = vmulq_f32(rgb_vals, vdivq_f32(vdupq_n_f32(1.0), alpha_v));
+        }
+
+        rgb_vals = vminq_f32(vmaxq_f32(rgb_vals, zero), one);
+        let idx = vcvtq_s32_f32(vmulq_f32(rgb_vals, scale));
+
+        // ARGB output: [A, R, G, B]
+        *out_ptr.add(o_idx)     = (alpha * 255.0 + 0.5) as u8;
+        *out_ptr.add(o_idx + 1) = *lut.offset(vgetq_lane_s32::<0>(idx) as isize);
+        *out_ptr.add(o_idx + 2) = *lut.offset(vgetq_lane_s32::<1>(idx) as isize);
+        *out_ptr.add(o_idx + 3) = *lut.offset(vgetq_lane_s32::<2>(idx) as isize);
+
+        let zero_v = vdupq_n_f32(0.0);
+        vst1q_f32(sp,       vextq_f32::<1>(f0, zero_v));
+        vst1q_f32(sp.add(4),  vextq_f32::<1>(f1, zero_v));
+        vst1q_f32(sp.add(8),  vextq_f32::<1>(f2, zero_v));
+        vst1q_f32(sp.add(12), vextq_f32::<1>(f3, zero_v));
+
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
+
 // --- RGBX NEON ---
 
 /// NEON horizontal upscale for RGBX.

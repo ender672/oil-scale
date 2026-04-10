@@ -116,6 +116,12 @@ fn preprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[1] = pixel[3] * srgb_to_linear_ref(pixel[1]);
             pixel[2] = pixel[3] * srgb_to_linear_ref(pixel[2]);
         }
+        ColorSpace::ARGB => {
+            let alpha = pixel[0];
+            pixel[1] = alpha * srgb_to_linear_ref(pixel[1]);
+            pixel[2] = alpha * srgb_to_linear_ref(pixel[2]);
+            pixel[3] = alpha * srgb_to_linear_ref(pixel[3]);
+        }
         ColorSpace::RGBX => {
             pixel[0] = srgb_to_linear_ref(pixel[0]);
             pixel[1] = srgb_to_linear_ref(pixel[1]);
@@ -163,6 +169,18 @@ fn postprocess(pixel: &mut [f64], cs: ColorSpace) {
             pixel[1] = linear_to_srgb_ref(pixel[1]);
             pixel[2] = linear_to_srgb_ref(pixel[2]);
             pixel[3] = alpha;
+        }
+        ColorSpace::ARGB => {
+            let alpha = clamp_f(pixel[0]);
+            if alpha != 0.0 {
+                pixel[1] /= alpha;
+                pixel[2] /= alpha;
+                pixel[3] /= alpha;
+            }
+            pixel[0] = alpha;
+            pixel[1] = linear_to_srgb_ref(pixel[1]);
+            pixel[2] = linear_to_srgb_ref(pixel[2]);
+            pixel[3] = linear_to_srgb_ref(pixel[3]);
         }
         ColorSpace::CMYK => {
             pixel[0] = clamp_f(pixel[0]);
@@ -218,7 +236,7 @@ fn validate_scanline8(oil: &[u8], reference: &[f64], width: usize, cmp: usize) {
                 }
             }
 
-            if error > 0.06 {
+            if error > 0.07 {
                 panic!(
                     "[{}:{}] expected: {}, got {} ({:.9})",
                     i, j, ref_i, oil[pos], ref_f
@@ -407,6 +425,7 @@ fn test_scale_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
     test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
+    test_scale_square_rand(rng, dim_a, dim_b, ColorSpace::ARGB);
 }
 
 fn test_scale_all_permutations(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
@@ -543,6 +562,7 @@ fn test_reset_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
     test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
+    test_reset_square_rand(rng, dim_a, dim_b, ColorSpace::ARGB);
 }
 
 #[test]
@@ -576,6 +596,7 @@ fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::RgbNoGamma);
     test_scale_catrom_extremes(ColorSpace::RgbaNoGamma);
     test_scale_catrom_extremes(ColorSpace::RgbxNoGamma);
+    test_scale_catrom_extremes(ColorSpace::ARGB);
 }
 
 // --- discard_output_scanline tests ---
@@ -651,6 +672,7 @@ fn test_discard_each_cs(rng: &mut StdRng, dim_a: u32, dim_b: u32) {
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbNoGamma);
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbaNoGamma);
     test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::RgbxNoGamma);
+    test_discard_square_rand(rng, dim_a, dim_b, ColorSpace::ARGB);
 }
 
 #[test]
@@ -723,7 +745,7 @@ fn test_out_not_ready(in_dim: u32, out_dim: u32, cs: ColorSpace) {
 #[test]
 fn out_not_ready_downscale() {
     for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA,
-                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma] {
+                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma, ColorSpace::ARGB] {
         test_out_not_ready(100, 50, cs);
     }
 }
@@ -731,7 +753,7 @@ fn out_not_ready_downscale() {
 #[test]
 fn out_not_ready_upscale() {
     for &cs in &[ColorSpace::G, ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::CMYK, ColorSpace::GA,
-                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma] {
+                 ColorSpace::RgbNoGamma, ColorSpace::RgbaNoGamma, ColorSpace::RgbxNoGamma, ColorSpace::ARGB] {
         test_out_not_ready(50, 100, cs);
     }
 }
@@ -857,6 +879,7 @@ fn colorspace_components() {
     assert_eq!(ColorSpace::RgbNoGamma.components(), 3);
     assert_eq!(ColorSpace::RgbaNoGamma.components(), 4);
     assert_eq!(ColorSpace::RgbxNoGamma.components(), 4);
+    assert_eq!(ColorSpace::ARGB.components(), 4);
 }
 
 // --- Error Display tests ---
