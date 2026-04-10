@@ -519,6 +519,7 @@ pub unsafe fn xscale_up_rgba(
 ) {
     let tables = srgb::tables();
     let s2l = tables.s2l.as_ptr();
+    let i2f = tables.i2f.as_ptr();
     let mut smp_r = _mm_setzero_ps();
     let mut smp_g = _mm_setzero_ps();
     let mut smp_b = _mm_setzero_ps();
@@ -532,7 +533,7 @@ pub unsafe fn xscale_up_rgba(
 
     for i in 0..width_in as usize {
         let in_base = i * 4;
-        let alpha_new = *in_ptr.add(in_base + 3) as f32 / 255.0;
+        let alpha_new = *i2f.add(*in_ptr.add(in_base + 3) as usize);
 
         smp_a = push_f_sse2(smp_a, alpha_new);
         smp_r = push_f_sse2(smp_r, alpha_new * *s2l.add(*in_ptr.add(in_base) as usize));
@@ -1660,15 +1661,15 @@ pub unsafe fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     let mut i = 0;
     let mut s_idx = 0;
 
-    // Process 4 output values at a time
-    while i + 3 < sl_len {
+    // Process 8 output values at a time (two groups of 4 accumulators)
+    while i + 7 < sl_len {
         let sp = s_ptr.add(s_idx) as *mut __m128i;
+
+        // Group 1: load 4 accumulators, extract first float from each
         let v0 = _mm_loadu_si128(sp);
         let v1 = _mm_loadu_si128(sp.add(1));
         let v2 = _mm_loadu_si128(sp.add(2));
         let v3 = _mm_loadu_si128(sp.add(3));
-
-        // Extract first float from each 4-element accumulator
         let f0 = _mm_castsi128_ps(v0);
         let f1 = _mm_castsi128_ps(v1);
         let f2 = _mm_castsi128_ps(v2);
@@ -1676,15 +1677,63 @@ pub unsafe fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
         let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
         let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        let clamped = _mm_min_ps(_mm_max_ps(vals, zero), one);
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped, scale), half));
 
-        // Clamp to [0, 1], scale to [0, 255], add 0.5, truncate to int, pack to bytes
+        // Group 2: load next 4 accumulators
+        let w0 = _mm_loadu_si128(sp.add(4));
+        let w1 = _mm_loadu_si128(sp.add(5));
+        let w2 = _mm_loadu_si128(sp.add(6));
+        let w3 = _mm_loadu_si128(sp.add(7));
+        let g0 = _mm_castsi128_ps(w0);
+        let g1 = _mm_castsi128_ps(w1);
+        let g2 = _mm_castsi128_ps(w2);
+        let g3 = _mm_castsi128_ps(w3);
+        let ab2 = _mm_shuffle_ps(g0, g1, mm_shuffle(0, 0, 0, 0));
+        let cd2 = _mm_shuffle_ps(g2, g3, mm_shuffle(0, 0, 0, 0));
+        let vals2 = _mm_shuffle_ps(ab2, cd2, mm_shuffle(2, 0, 2, 0));
+        let clamped2 = _mm_min_ps(_mm_max_ps(vals2, zero), one);
+        let idx2 = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped2, scale), half));
+
+        // Pack both groups into 8 bytes and store
+        let packed = _mm_packs_epi32(idx, idx2);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(i) as *mut __m128i, packed);
+
+        // Shift all 8 accumulators left
+        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
+        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
+        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+        _mm_storeu_si128(sp.add(4), _mm_srli_si128(w0, 4));
+        _mm_storeu_si128(sp.add(5), _mm_srli_si128(w1, 4));
+        _mm_storeu_si128(sp.add(6), _mm_srli_si128(w2, 4));
+        _mm_storeu_si128(sp.add(7), _mm_srli_si128(w3, 4));
+
+        s_idx += 32;
+        i += 8;
+    }
+
+    // Process 4 output values at a time (fallback)
+    while i + 3 < sl_len {
+        let sp = s_ptr.add(s_idx) as *mut __m128i;
+        let v0 = _mm_loadu_si128(sp);
+        let v1 = _mm_loadu_si128(sp.add(1));
+        let v2 = _mm_loadu_si128(sp.add(2));
+        let v3 = _mm_loadu_si128(sp.add(3));
+        let f0 = _mm_castsi128_ps(v0);
+        let f1 = _mm_castsi128_ps(v1);
+        let f2 = _mm_castsi128_ps(v2);
+        let f3 = _mm_castsi128_ps(v3);
+        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
+        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
+        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
         let clamped = _mm_min_ps(_mm_max_ps(vals, zero), one);
         let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(clamped, scale), half));
         let packed = _mm_packs_epi32(idx, idx);
         let result = _mm_packus_epi16(packed, packed);
         *(out_ptr.add(i) as *mut i32) = _mm_cvtsi128_si32(result);
 
-        // Shift all 4 accumulators left
         _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
         _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
         _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
@@ -2364,19 +2413,16 @@ pub unsafe fn xscale_up_rgb_nogamma(
             let t2_g = dot4x2(smp_g, c0, c1);
             let t2_b = dot4x2(smp_b, c0, c1);
 
-            // Store interleaved: [R0, G0, B0, R1, G1, B1]
-            *out_ptr.add(out_idx)     = _mm_cvtss_f32(t2_r);
-            *out_ptr.add(out_idx + 1) = _mm_cvtss_f32(t2_g);
-            *out_ptr.add(out_idx + 2) = _mm_cvtss_f32(t2_b);
-            *out_ptr.add(out_idx + 3) = _mm_cvtss_f32(
-                _mm_shuffle_ps(t2_r, t2_r, mm_shuffle(1, 1, 1, 1)),
-            );
-            *out_ptr.add(out_idx + 4) = _mm_cvtss_f32(
-                _mm_shuffle_ps(t2_g, t2_g, mm_shuffle(1, 1, 1, 1)),
-            );
-            *out_ptr.add(out_idx + 5) = _mm_cvtss_f32(
+            // Store interleaved: [R0, G0, B0, R1, G1, B1] using wider stores
+            let rg = _mm_unpacklo_ps(t2_r, t2_g); // [R0, G0, R1, G1]
+            let rg_d = _mm_castps_pd(rg);
+            _mm_storel_pd(out_ptr.add(out_idx) as *mut f64, rg_d); // R0, G0
+            _mm_store_ss(out_ptr.add(out_idx + 2), t2_b); // B0
+            _mm_storeh_pd(out_ptr.add(out_idx + 3) as *mut f64, rg_d); // R1, G1
+            _mm_store_ss(
+                out_ptr.add(out_idx + 5),
                 _mm_shuffle_ps(t2_b, t2_b, mm_shuffle(1, 1, 1, 1)),
-            );
+            ); // B1
 
             out_idx += 6;
             coeff_idx += 8;
