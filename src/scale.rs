@@ -67,6 +67,7 @@ pub struct OilScale {
     borders_x: Vec<i32>,
     borders_y: Vec<i32>,
     sums_y: Vec<f32>,
+    sums_y_tap: usize,
     rb: Vec<f32>,
     tmp_coeffs: Vec<f32>,
     is_upscale: bool,
@@ -465,8 +466,13 @@ fn scale_down_rgba(
     coeffs_x: &[f32],
     border_buf: &[i32],
     coeffs_y: &[f32],
+    tap: usize,
 ) {
     let tables = srgb::tables();
+    let off0 = tap;
+    let off1 = (tap + 1) & 3;
+    let off2 = (tap + 2) & 3;
+    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4]; // R, G, B, A
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -485,7 +491,11 @@ fn scale_down_rgba(
         }
 
         for j in 0..4 {
-            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            let sample = sum[j][0];
+            sums_y[sy_idx + off0] += sample * coeffs_y[0];
+            sums_y[sy_idx + off1] += sample * coeffs_y[1];
+            sums_y[sy_idx + off2] += sample * coeffs_y[2];
+            sums_y[sy_idx + off3] += sample * coeffs_y[3];
             shift_left(&mut sum[j]);
             sy_idx += 4;
         }
@@ -493,24 +503,24 @@ fn scale_down_rgba(
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-fn yscale_out_rgba(sums: &mut [f32], width: usize, out: &mut [u8]) {
+fn yscale_out_rgba(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
     let tables = srgb::tables();
+    let tap_off = tap;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let alpha = clampf(sums[s_idx + 12]);
-        if alpha != 0.0 {
-            for j in 0..3 {
-                sums[s_idx + j * 4] /= alpha;
-            }
-        }
+        let alpha = clampf(sums[s_idx + 12 + tap_off]);
         for j in 0..3 {
-            out[o_idx + j] = tables.linear_to_srgb(clampf(sums[s_idx + j * 4]));
-            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+            let mut val = sums[s_idx + j * 4 + tap_off];
+            if alpha != 0.0 {
+                val /= alpha;
+            }
+            out[o_idx + j] = tables.linear_to_srgb(clampf(val));
+            sums[s_idx + j * 4 + tap_off] = 0.0;
         }
         out[o_idx + 3] = f2i(alpha * 255.0);
-        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        sums[s_idx + 12 + tap_off] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -582,8 +592,13 @@ fn scale_down_rgbx(
     coeffs_x: &[f32],
     border_buf: &[i32],
     coeffs_y: &[f32],
+    tap: usize,
 ) {
     let tables = srgb::tables();
+    let off0 = tap;
+    let off1 = (tap + 1) & 3;
+    let off2 = (tap + 2) & 3;
+    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4]; // R, G, B, X
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -592,16 +607,21 @@ fn scale_down_rgbx(
     for i in 0..out_width as usize {
         for _ in 0..border_buf[i] {
             let cx = &coeffs_x[cx_idx..cx_idx + 4];
-            for k in 0..3 {
-                add_sample_to_sum(tables.s2l[input[in_idx + k] as usize], cx, &mut sum[k]);
-            }
+            let px = u32::from_le_bytes([input[in_idx], input[in_idx+1], input[in_idx+2], input[in_idx+3]]);
+            add_sample_to_sum(tables.s2l[(px & 0xFF) as usize], cx, &mut sum[0]);
+            add_sample_to_sum(tables.s2l[((px >> 8) & 0xFF) as usize], cx, &mut sum[1]);
+            add_sample_to_sum(tables.s2l[((px >> 16) & 0xFF) as usize], cx, &mut sum[2]);
             add_sample_to_sum(1.0, cx, &mut sum[3]);
             in_idx += 4;
             cx_idx += 4;
         }
 
         for j in 0..4 {
-            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            let sample = sum[j][0];
+            sums_y[sy_idx + off0] += sample * coeffs_y[0];
+            sums_y[sy_idx + off1] += sample * coeffs_y[1];
+            sums_y[sy_idx + off2] += sample * coeffs_y[2];
+            sums_y[sy_idx + off3] += sample * coeffs_y[3];
             shift_left(&mut sum[j]);
             sy_idx += 4;
         }
@@ -609,18 +629,19 @@ fn scale_down_rgbx(
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-fn yscale_out_rgbx(sums: &mut [f32], width: usize, out: &mut [u8]) {
+fn yscale_out_rgbx(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
     let tables = srgb::tables();
+    let tap_off = tap;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
         for j in 0..3 {
-            out[o_idx + j] = tables.linear_to_srgb(clampf(sums[s_idx + j * 4]));
-            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+            out[o_idx + j] = tables.linear_to_srgb(clampf(sums[s_idx + j * 4 + tap_off]));
+            sums[s_idx + j * 4 + tap_off] = 0.0;
         }
         out[o_idx + 3] = 255;
-        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        sums[s_idx + 12 + tap_off] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -666,6 +687,7 @@ fn scale_down_cmyk(
     border_buf: &[i32],
     coeffs_y: &[f32],
 ) {
+    let tables = srgb::tables();
     let mut sum = [[0.0f32; 4]; 4]; // C, M, Y, K
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -674,9 +696,11 @@ fn scale_down_cmyk(
     for i in 0..out_width as usize {
         for _ in 0..border_buf[i] {
             let cx = &coeffs_x[cx_idx..cx_idx + 4];
-            for k in 0..4 {
-                add_sample_to_sum(input[in_idx + k] as f32 / 255.0, cx, &mut sum[k]);
-            }
+            let px = u32::from_le_bytes([input[in_idx], input[in_idx+1], input[in_idx+2], input[in_idx+3]]);
+            add_sample_to_sum(tables.i2f[(px & 0xFF) as usize], cx, &mut sum[0]);
+            add_sample_to_sum(tables.i2f[((px >> 8) & 0xFF) as usize], cx, &mut sum[1]);
+            add_sample_to_sum(tables.i2f[((px >> 16) & 0xFF) as usize], cx, &mut sum[2]);
+            add_sample_to_sum(tables.i2f[(px >> 24) as usize], cx, &mut sum[3]);
             in_idx += 4;
             cx_idx += 4;
         }
@@ -886,8 +910,13 @@ fn scale_down_rgba_nogamma(
     coeffs_x: &[f32],
     border_buf: &[i32],
     coeffs_y: &[f32],
+    tap: usize,
 ) {
     let tables = srgb::tables();
+    let off0 = tap;
+    let off1 = (tap + 1) & 3;
+    let off2 = (tap + 2) & 3;
+    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4];
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -906,7 +935,11 @@ fn scale_down_rgba_nogamma(
         }
 
         for j in 0..4 {
-            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            let sample = sum[j][0];
+            sums_y[sy_idx + off0] += sample * coeffs_y[0];
+            sums_y[sy_idx + off1] += sample * coeffs_y[1];
+            sums_y[sy_idx + off2] += sample * coeffs_y[2];
+            sums_y[sy_idx + off3] += sample * coeffs_y[3];
             shift_left(&mut sum[j]);
             sy_idx += 4;
         }
@@ -921,8 +954,13 @@ fn scale_down_rgbx_nogamma(
     coeffs_x: &[f32],
     border_buf: &[i32],
     coeffs_y: &[f32],
+    tap: usize,
 ) {
     let tables = srgb::tables();
+    let off0 = tap;
+    let off1 = (tap + 1) & 3;
+    let off2 = (tap + 2) & 3;
+    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4];
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -940,7 +978,11 @@ fn scale_down_rgbx_nogamma(
         }
 
         for j in 0..4 {
-            add_sample_to_sum(sum[j][0], coeffs_y, &mut sums_y[sy_idx..sy_idx + 4]);
+            let sample = sum[j][0];
+            sums_y[sy_idx + off0] += sample * coeffs_y[0];
+            sums_y[sy_idx + off1] += sample * coeffs_y[1];
+            sums_y[sy_idx + off2] += sample * coeffs_y[2];
+            sums_y[sy_idx + off3] += sample * coeffs_y[3];
             shift_left(&mut sum[j]);
             sy_idx += 4;
         }
@@ -948,40 +990,41 @@ fn scale_down_rgbx_nogamma(
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
+fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
+    let tap_off = tap;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let alpha = clampf(sums[s_idx + 12]);
-        if alpha != 0.0 {
-            for j in 0..3 {
-                sums[s_idx + j * 4] /= alpha;
-            }
-        }
+        let alpha = clampf(sums[s_idx + 12 + tap_off]);
         for j in 0..3 {
-            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4]) * 255.0);
-            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+            let mut val = sums[s_idx + j * 4 + tap_off];
+            if alpha != 0.0 {
+                val /= alpha;
+            }
+            out[o_idx + j] = f2i(clampf(val) * 255.0);
+            sums[s_idx + j * 4 + tap_off] = 0.0;
         }
         out[o_idx + 3] = f2i(alpha * 255.0);
-        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        sums[s_idx + 12 + tap_off] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8]) {
+fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
+    let tap_off = tap;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
         for j in 0..3 {
-            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4]) * 255.0);
-            shift_left(&mut sums[s_idx + j * 4..s_idx + j * 4 + 4]);
+            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4 + tap_off]) * 255.0);
+            sums[s_idx + j * 4 + tap_off] = 0.0;
         }
         out[o_idx + 3] = 255;
-        shift_left(&mut sums[s_idx + 12..s_idx + 16]);
+        sums[s_idx + 12 + tap_off] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -1031,6 +1074,7 @@ impl OilScale {
             borders_x: Vec::new(),
             borders_y: Vec::new(),
             sums_y: Vec::new(),
+            sums_y_tap: 0,
             rb: Vec::new(),
             tmp_coeffs: Vec::new(),
             is_upscale,
@@ -1240,6 +1284,7 @@ impl OilScale {
     pub fn reset(&mut self) {
         self.in_pos = 0;
         self.out_pos = 0;
+        self.sums_y_tap = 0;
         if self.is_upscale {
             self.upscale_init();
         } else {
@@ -1696,6 +1741,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
@@ -1717,6 +1763,7 @@ impl OilScale {
                     &self.coeffs_x,
                     &self.borders_x,
                     &coeffs_y,
+                    self.sums_y_tap,
                 );
             }
             ColorSpace::RGBX => {
@@ -1729,6 +1776,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
@@ -1750,6 +1798,7 @@ impl OilScale {
                     &self.coeffs_x,
                     &self.borders_x,
                     &coeffs_y,
+                    self.sums_y_tap,
                 );
             }
             ColorSpace::G => {
@@ -1894,6 +1943,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
@@ -1915,6 +1965,7 @@ impl OilScale {
                     &self.coeffs_x,
                     &self.borders_x,
                     &coeffs_y,
+                    self.sums_y_tap,
                 );
             }
             ColorSpace::RgbxNoGamma => {
@@ -1927,6 +1978,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
@@ -1948,6 +2000,7 @@ impl OilScale {
                     &self.coeffs_x,
                     &self.borders_x,
                     &coeffs_y,
+                    self.sums_y_tap,
                 );
             }
         }
@@ -1987,6 +2040,7 @@ impl OilScale {
     fn down_scale_out(&mut self, output: &mut [u8]) {
         let cmp = self.cs.components();
         let sl_len = self.out_width as usize * cmp;
+        let tap = self.sums_y_tap;
 
         match self.cs {
             ColorSpace::RGB => {
@@ -2004,26 +2058,26 @@ impl OilScale {
             ColorSpace::RGBA => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgba(&mut self.sums_y, self.out_width, output);
+                    sse2::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
                     neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output);
+                yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output, tap);
             }
             ColorSpace::RGBX => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output);
+                    sse2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
                     neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output);
+                yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output, tap);
             }
             ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
@@ -2052,27 +2106,29 @@ impl OilScale {
             ColorSpace::RgbaNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
+                    sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
                     neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output);
+                yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
             }
             ColorSpace::RgbxNoGamma => {
                 #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
                 unsafe {
-                    sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
+                    sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
                     neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output);
+                yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
             }
         }
+
+        self.sums_y_tap = (self.sums_y_tap + 1) & 3;
     }
 }
