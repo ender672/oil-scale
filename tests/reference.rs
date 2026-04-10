@@ -616,7 +616,7 @@ fn do_oil_scale_with_discard(
         .collect();
 
     let mut in_line = 0usize;
-    for out_row_idx in 0..out_height as usize {
+    for (out_row_idx, out_row) in output.iter_mut().enumerate() {
         while os.slots() > 0 {
             os.push_scanline(&input[in_line]).unwrap();
             in_line += 1;
@@ -625,7 +625,7 @@ fn do_oil_scale_with_discard(
             // Discard odd rows
             os.discard_output_scanline().unwrap();
         } else {
-            os.read_scanline(&mut output[out_row_idx]).unwrap();
+            os.read_scanline(out_row).unwrap();
         }
     }
 
