@@ -45,11 +45,11 @@ pub mod jpeg_ffi;
 
 pub(crate) mod srgb;
 pub(crate) mod kernel;
-#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+#[cfg(target_arch = "x86_64")]
 pub(crate) mod sse2;
-#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+#[cfg(target_arch = "x86_64")]
 pub(crate) mod avx2;
-#[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+#[cfg(target_arch = "aarch64")]
 pub(crate) mod neon;
 
 pub use colorspace::ColorSpace;
