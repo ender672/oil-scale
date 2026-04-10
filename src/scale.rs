@@ -1935,6 +1935,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
@@ -1970,6 +1971,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
@@ -2005,6 +2007,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
@@ -2206,6 +2209,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
@@ -2253,6 +2257,7 @@ impl OilScale {
                         &self.coeffs_x,
                         &self.borders_x,
                         &coeffs_y,
+                        self.sums_y_tap,
                     );
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
@@ -2325,7 +2330,7 @@ impl OilScale {
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
-                    neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output);
+                    neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output, tap);
@@ -2337,7 +2342,7 @@ impl OilScale {
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
-                    neon::yscale_out_argb(&mut self.sums_y, self.out_width, output);
+                    neon::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_argb(&mut self.sums_y, self.out_width as usize, output, tap);
@@ -2349,7 +2354,7 @@ impl OilScale {
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
-                    neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output);
+                    neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output, tap);
@@ -2389,7 +2394,7 @@ impl OilScale {
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
-                    neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output);
+                    neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
@@ -2405,7 +2410,7 @@ impl OilScale {
                 }
                 #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
                 unsafe {
-                    neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output);
+                    neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
                 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
                 yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
