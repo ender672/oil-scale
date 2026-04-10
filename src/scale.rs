@@ -1221,17 +1221,13 @@ impl OilScale {
         if self.is_upscale {
             self.borders_y[self.in_pos as usize - 1] -= 1;
         } else {
+            // Use yscale_out to shift the sums_y accumulators, discarding
+            // the output pixels. This avoids needing layout-specific shift
+            // logic for each colorspace's sums_y memory layout.
             let cmp = self.cs.components();
             let sl_len = self.out_width as usize * cmp;
-            let mut s_idx = 0;
-            for _ in 0..sl_len {
-                let s = &mut self.sums_y[s_idx..s_idx + 4];
-                s[0] = s[1];
-                s[1] = s[2];
-                s[2] = s[3];
-                s[3] = 0.0;
-                s_idx += 4;
-            }
+            let mut tmp = vec![0u8; sl_len];
+            self.down_scale_out(&mut tmp);
         }
         self.out_pos += 1;
         Ok(())

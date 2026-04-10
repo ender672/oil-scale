@@ -723,7 +723,10 @@ pub unsafe fn scale_down_rgba(
     let tables = srgb::tables();
     let s2l = tables.s2l.as_ptr();
     let i2f = tables.i2f.as_ptr();
-    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy0 = _mm_set1_ps(*coeffs_y.as_ptr());
+    let cy1 = _mm_set1_ps(*coeffs_y.as_ptr().add(1));
+    let cy2 = _mm_set1_ps(*coeffs_y.as_ptr().add(2));
+    let cy3 = _mm_set1_ps(*coeffs_y.as_ptr().add(3));
 
     let mut sum_r = _mm_setzero_ps();
     let mut sum_g = _mm_setzero_ps();
@@ -833,29 +836,29 @@ pub unsafe fn scale_down_rgba(
             }
         }
 
-        // Accumulate into y sums: R channel
+        // Vertical accumulation using interleaved sums_y layout:
+        // [R0 G0 B0 A0 | R1 G1 B1 A1 | R2 G2 B2 A2 | R3 G3 B3 A3]
+        let rg = _mm_unpacklo_ps(sum_r, sum_g);
+        let ba = _mm_unpacklo_ps(sum_b, sum_a);
+        let rgba = _mm_movelh_ps(rg, ba);
+
         let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_add_ps(_mm_mul_ps(cy0, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
 
-        // G channel
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
+        sy = _mm_add_ps(_mm_mul_ps(cy1, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
 
-        // B channel
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
+        sy = _mm_add_ps(_mm_mul_ps(cy2, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
 
-        // A channel
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_a, sum_a, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 12));
+        sy = _mm_add_ps(_mm_mul_ps(cy3, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 12), sy);
+
+        sy_idx += 16;
 
         // shift_left for each channel
         sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
@@ -873,6 +876,7 @@ pub unsafe fn yscale_out_rgba(sums: &mut [f32], width: u32, out: &mut [u8]) {
     let scale = _mm_set1_ps((tables.l2s_len - 1) as f32);
     let one = _mm_set1_ps(1.0);
     let zero = _mm_setzero_ps();
+    let z = _mm_setzero_si128();
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
@@ -880,22 +884,11 @@ pub unsafe fn yscale_out_rgba(sums: &mut [f32], width: u32, out: &mut [u8]) {
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let sp = s_ptr.add(s_idx) as *mut __m128i;
-
-        // Load 4 accumulators for this pixel: [R0..R3], [G0..G3], [B0..B3], [A0..A3]
-        let v0 = _mm_loadu_si128(sp);
-        let v1 = _mm_loadu_si128(sp.add(1));
-        let v2 = _mm_loadu_si128(sp.add(2));
-        let v3 = _mm_loadu_si128(sp.add(3));
-
-        // Gather first element of each accumulator: {R, G, B, A}
-        let f0 = _mm_castsi128_ps(v0);
-        let f1 = _mm_castsi128_ps(v1);
-        let f2 = _mm_castsi128_ps(v2);
-        let f3 = _mm_castsi128_ps(v3);
-        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
-        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
-        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        // Interleaved layout: tap 0 is [R0 G0 B0 A0]
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
 
         // Clamp alpha to [0, 1]
         let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
@@ -917,11 +910,11 @@ pub unsafe fn yscale_out_rgba(sums: &mut [f32], width: u32, out: &mut [u8]) {
         *out_ptr.add(o_idx + 2) = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as isize);
         *out_ptr.add(o_idx + 3) = (alpha * 255.0 + 0.5) as u8;
 
-        // Shift all 4 accumulators left
-        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
-        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
-        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
-        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+        // Shift: move taps 1-3 down, zero tap 3
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
         s_idx += 16;
         o_idx += 4;
@@ -1107,7 +1100,10 @@ pub unsafe fn scale_down_rgbx(
 ) {
     let tables = srgb::tables();
     let s2l = tables.s2l.as_ptr();
-    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy0 = _mm_set1_ps(*coeffs_y.as_ptr());
+    let cy1 = _mm_set1_ps(*coeffs_y.as_ptr().add(1));
+    let cy2 = _mm_set1_ps(*coeffs_y.as_ptr().add(2));
+    let cy3 = _mm_set1_ps(*coeffs_y.as_ptr().add(3));
 
     let mut sum_r = _mm_setzero_ps();
     let mut sum_g = _mm_setzero_ps();
@@ -1278,29 +1274,29 @@ pub unsafe fn scale_down_rgbx(
             }
         }
 
-        // Accumulate into y sums: R channel
+        // Vertical accumulation using interleaved sums_y layout:
+        // [R0 G0 B0 X0 | R1 G1 B1 X1 | R2 G2 B2 X2 | R3 G3 B3 X3]
+        let rg = _mm_unpacklo_ps(sum_r, sum_g);
+        let bx = _mm_unpacklo_ps(sum_b, sum_b);
+        let rgbx = _mm_movelh_ps(rg, bx);
+
         let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        sy = _mm_add_ps(_mm_mul_ps(cy0, rgbx), sy);
         _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
 
-        // G channel
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
+        sy = _mm_add_ps(_mm_mul_ps(cy1, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
 
-        // B channel
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
+        sy = _mm_add_ps(_mm_mul_ps(cy2, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
 
-        // Skip X channel y-accumulation (X is always 1.0, output always 255)
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 12));
+        sy = _mm_add_ps(_mm_mul_ps(cy3, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 12), sy);
+
+        sy_idx += 16;
 
         // shift_left for each channel
         sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
@@ -1317,6 +1313,7 @@ pub unsafe fn yscale_out_rgbx(sums: &mut [f32], width: u32, out: &mut [u8]) {
     let scale = _mm_set1_ps((tables.l2s_len - 1) as f32);
     let one = _mm_set1_ps(1.0);
     let zero = _mm_setzero_ps();
+    let z = _mm_setzero_si128();
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
@@ -1324,21 +1321,11 @@ pub unsafe fn yscale_out_rgbx(sums: &mut [f32], width: u32, out: &mut [u8]) {
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let sp = s_ptr.add(s_idx) as *mut __m128i;
-
-        // Load 3 accumulators for this pixel: [R0..R3], [G0..G3], [B0..B3]
-        // X accumulator is unused (output always 255)
-        let v0 = _mm_loadu_si128(sp);
-        let v1 = _mm_loadu_si128(sp.add(1));
-        let v2 = _mm_loadu_si128(sp.add(2));
-
-        // Gather first element of each accumulator: {R, G, B, _}
-        let f0 = _mm_castsi128_ps(v0);
-        let f1 = _mm_castsi128_ps(v1);
-        let f2 = _mm_castsi128_ps(v2);
-        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
-        let cd = _mm_shuffle_ps(f2, f2, mm_shuffle(0, 0, 0, 0));
-        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        // Interleaved layout: tap 0 is [R0 G0 B0 X0]
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
 
         // Clamp RGB to [0, 1] and compute l2s_map indices
         let clamped = _mm_min_ps(_mm_max_ps(vals, zero), one);
@@ -1349,10 +1336,11 @@ pub unsafe fn yscale_out_rgbx(sums: &mut [f32], width: u32, out: &mut [u8]) {
         *out_ptr.add(o_idx + 2) = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as isize);
         *out_ptr.add(o_idx + 3) = 255;
 
-        // Shift R, G, B accumulators left (skip X)
-        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
-        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
-        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+        // Shift: move taps 1-3 down, zero tap 3
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
         s_idx += 16;
         o_idx += 4;
@@ -2771,6 +2759,7 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
     let half = _mm_set1_ps(0.5);
     let one = _mm_set1_ps(1.0);
     let zero = _mm_setzero_ps();
+    let z = _mm_setzero_si128();
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
@@ -2781,21 +2770,11 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
 
     // Process 2 pixels at a time
     while i + 1 < width {
-        let sp = s_ptr.add(s_idx) as *mut __m128i;
-
-        // Pixel 1: load 4 accumulators
-        let v0 = _mm_loadu_si128(sp);
-        let v1 = _mm_loadu_si128(sp.add(1));
-        let v2 = _mm_loadu_si128(sp.add(2));
-        let v3 = _mm_loadu_si128(sp.add(3));
-
-        let f0 = _mm_castsi128_ps(v0);
-        let f1 = _mm_castsi128_ps(v1);
-        let f2 = _mm_castsi128_ps(v2);
-        let f3 = _mm_castsi128_ps(v3);
-        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
-        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
-        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        // Pixel 1: interleaved layout - tap 0 is [R0 G0 B0 A0]
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
 
         let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
         let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
@@ -2809,26 +2788,17 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
         let rgb_vals = _mm_shuffle_ps(rgb_vals, hi, mm_shuffle(2, 0, 1, 0));
         let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(rgb_vals, scale), half));
 
-        // Shift pixel 1 accumulators
-        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
-        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
-        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
-        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+        // Shift: move taps 1-3 down, zero tap 3
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
-        // Pixel 2: load 4 accumulators
-        let sp2 = s_ptr.add(s_idx + 16) as *mut __m128i;
-        let w0 = _mm_loadu_si128(sp2);
-        let w1 = _mm_loadu_si128(sp2.add(1));
-        let w2 = _mm_loadu_si128(sp2.add(2));
-        let w3 = _mm_loadu_si128(sp2.add(3));
-
-        let g0 = _mm_castsi128_ps(w0);
-        let g1 = _mm_castsi128_ps(w1);
-        let g2 = _mm_castsi128_ps(w2);
-        let g3 = _mm_castsi128_ps(w3);
-        let ab2 = _mm_shuffle_ps(g0, g1, mm_shuffle(0, 0, 0, 0));
-        let cd2 = _mm_shuffle_ps(g2, g3, mm_shuffle(0, 0, 0, 0));
-        let vals2 = _mm_shuffle_ps(ab2, cd2, mm_shuffle(2, 0, 2, 0));
+        // Pixel 2
+        let vals2 = _mm_loadu_ps(s_ptr.add(s_idx + 16));
+        let w1 = _mm_loadu_si128(s_ptr.add(s_idx + 20) as *const __m128i);
+        let w2 = _mm_loadu_si128(s_ptr.add(s_idx + 24) as *const __m128i);
+        let w3 = _mm_loadu_si128(s_ptr.add(s_idx + 28) as *const __m128i);
 
         let alpha_v2 = _mm_shuffle_ps(vals2, vals2, mm_shuffle(3, 3, 3, 3));
         let alpha_v2 = _mm_min_ps(_mm_max_ps(alpha_v2, zero), one);
@@ -2847,11 +2817,11 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
         let packed = _mm_packus_epi16(packed, packed);
         _mm_storel_epi64(out_ptr.add(o_idx) as *mut __m128i, packed);
 
-        // Shift pixel 2 accumulators
-        _mm_storeu_si128(sp2, _mm_srli_si128(w0, 4));
-        _mm_storeu_si128(sp2.add(1), _mm_srli_si128(w1, 4));
-        _mm_storeu_si128(sp2.add(2), _mm_srli_si128(w2, 4));
-        _mm_storeu_si128(sp2.add(3), _mm_srli_si128(w3, 4));
+        // Shift pixel 2: move taps 1-3 down, zero tap 3
+        _mm_storeu_si128(s_ptr.add(s_idx + 16) as *mut __m128i, w1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 20) as *mut __m128i, w2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 24) as *mut __m128i, w3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 28) as *mut __m128i, z);
 
         s_idx += 32;
         o_idx += 8;
@@ -2860,20 +2830,10 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
 
     // Remaining pixel
     while i < width {
-        let sp = s_ptr.add(s_idx) as *mut __m128i;
-
-        let v0 = _mm_loadu_si128(sp);
-        let v1 = _mm_loadu_si128(sp.add(1));
-        let v2 = _mm_loadu_si128(sp.add(2));
-        let v3 = _mm_loadu_si128(sp.add(3));
-
-        let f0 = _mm_castsi128_ps(v0);
-        let f1 = _mm_castsi128_ps(v1);
-        let f2 = _mm_castsi128_ps(v2);
-        let f3 = _mm_castsi128_ps(v3);
-        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
-        let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
-        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
 
         let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
         let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
@@ -2890,10 +2850,10 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
         let packed = _mm_packus_epi16(packed, packed);
         *(out_ptr.add(o_idx) as *mut i32) = _mm_cvtsi128_si32(packed);
 
-        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
-        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
-        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
-        _mm_storeu_si128(sp.add(3), _mm_srli_si128(v3, 4));
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
         s_idx += 16;
         o_idx += 4;
@@ -2907,41 +2867,79 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
 pub unsafe fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: u32, out: &mut [u8]) {
     let scale = _mm_set1_ps(255.0);
     let half = _mm_set1_ps(0.5);
+    let one = _mm_set1_ps(1.0);
     let zero = _mm_setzero_ps();
-    let one_f = _mm_set1_ps(1.0);
+    let z = _mm_setzero_si128();
+    let mask = _mm_set_epi32(0, -1, -1, -1);
+    let x_val = _mm_set_epi32(255, 0, 0, 0);
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
-    for _ in 0..width {
-        let sp = s_ptr.add(s_idx) as *mut __m128i;
+    let mut i = 0u32;
 
-        let v0 = _mm_loadu_si128(sp);
-        let v1 = _mm_loadu_si128(sp.add(1));
-        let v2 = _mm_loadu_si128(sp.add(2));
+    // Process 2 pixels at a time
+    while i + 1 < width {
+        // Pixel 1: interleaved layout - tap 0 is [R0 G0 B0 X0]
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
 
-        let f0 = _mm_castsi128_ps(v0);
-        let f1 = _mm_castsi128_ps(v1);
-        let f2 = _mm_castsi128_ps(v2);
-        let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
-        let cd = _mm_shuffle_ps(f2, f2, mm_shuffle(0, 0, 0, 0));
-        let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
-
-        // Clamp to [0, 1], scale to [0, 255], round
-        let vals = _mm_max_ps(vals, zero);
-        let vals = _mm_min_ps(vals, one_f);
+        let vals = _mm_min_ps(_mm_max_ps(vals, zero), one);
         let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(vals, scale), half));
+        let idx = _mm_or_si128(_mm_and_si128(idx, mask), x_val);
 
-        *out_ptr.add(o_idx)     = _mm_cvtsi128_si32(idx) as u8;
-        *out_ptr.add(o_idx + 1) = _mm_cvtsi128_si32(_mm_srli_si128(idx, 4)) as u8;
-        *out_ptr.add(o_idx + 2) = _mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as u8;
-        *out_ptr.add(o_idx + 3) = 255;
+        // Shift: move taps 1-3 down, zero tap 3
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
-        _mm_storeu_si128(sp, _mm_srli_si128(v0, 4));
-        _mm_storeu_si128(sp.add(1), _mm_srli_si128(v1, 4));
-        _mm_storeu_si128(sp.add(2), _mm_srli_si128(v2, 4));
+        // Pixel 2
+        let vals2 = _mm_loadu_ps(s_ptr.add(s_idx + 16));
+        let w1 = _mm_loadu_si128(s_ptr.add(s_idx + 20) as *const __m128i);
+        let w2 = _mm_loadu_si128(s_ptr.add(s_idx + 24) as *const __m128i);
+        let w3 = _mm_loadu_si128(s_ptr.add(s_idx + 28) as *const __m128i);
+
+        let vals2 = _mm_min_ps(_mm_max_ps(vals2, zero), one);
+        let idx2 = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(vals2, scale), half));
+        let idx2 = _mm_or_si128(_mm_and_si128(idx2, mask), x_val);
+
+        let packed = _mm_packs_epi32(idx, idx2);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(o_idx) as *mut __m128i, packed);
+
+        _mm_storeu_si128(s_ptr.add(s_idx + 16) as *mut __m128i, w1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 20) as *mut __m128i, w2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 24) as *mut __m128i, w3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 28) as *mut __m128i, z);
+
+        s_idx += 32;
+        o_idx += 8;
+        i += 2;
+    }
+
+    // Remaining pixel
+    for _ in i..width {
+        let vals = _mm_loadu_ps(s_ptr.add(s_idx));
+        let v1 = _mm_loadu_si128(s_ptr.add(s_idx + 4) as *const __m128i);
+        let v2 = _mm_loadu_si128(s_ptr.add(s_idx + 8) as *const __m128i);
+        let v3 = _mm_loadu_si128(s_ptr.add(s_idx + 12) as *const __m128i);
+
+        let vals = _mm_min_ps(_mm_max_ps(vals, zero), one);
+        let idx = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(vals, scale), half));
+        let idx = _mm_or_si128(_mm_and_si128(idx, mask), x_val);
+        let packed = _mm_packs_epi32(idx, idx);
+        let packed = _mm_packus_epi16(packed, packed);
+        *(out_ptr.add(o_idx) as *mut i32) = _mm_cvtsi128_si32(packed);
+
+        _mm_storeu_si128(s_ptr.add(s_idx) as *mut __m128i, v1);
+        _mm_storeu_si128(s_ptr.add(s_idx + 4) as *mut __m128i, v2);
+        _mm_storeu_si128(s_ptr.add(s_idx + 8) as *mut __m128i, v3);
+        _mm_storeu_si128(s_ptr.add(s_idx + 12) as *mut __m128i, z);
 
         s_idx += 16;
         o_idx += 4;
@@ -3079,7 +3077,10 @@ pub unsafe fn scale_down_rgbx_nogamma(
 ) {
     let tables = srgb::tables();
     let i2f = tables.i2f.as_ptr();
-    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy0 = _mm_set1_ps(*coeffs_y.as_ptr());
+    let cy1 = _mm_set1_ps(*coeffs_y.as_ptr().add(1));
+    let cy2 = _mm_set1_ps(*coeffs_y.as_ptr().add(2));
+    let cy3 = _mm_set1_ps(*coeffs_y.as_ptr().add(3));
 
     let mut sum_r = _mm_setzero_ps();
     let mut sum_g = _mm_setzero_ps();
@@ -3162,26 +3163,29 @@ pub unsafe fn scale_down_rgbx_nogamma(
             }
         }
 
+        // Vertical accumulation using interleaved sums_y layout:
+        // [R0 G0 B0 X0 | R1 G1 B1 X1 | R2 G2 B2 X2 | R3 G3 B3 X3]
+        let rg = _mm_unpacklo_ps(sum_r, sum_g);
+        let bx = _mm_unpacklo_ps(sum_b, sum_b);
+        let rgbx = _mm_movelh_ps(rg, bx);
+
         let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
+        sy = _mm_add_ps(_mm_mul_ps(cy0, rgbx), sy);
         _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
 
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
+        sy = _mm_add_ps(_mm_mul_ps(cy1, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
 
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_add_ps(_mm_mul_ps(cy, sample), sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
+        sy = _mm_add_ps(_mm_mul_ps(cy2, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
 
-        // Skip X channel y-accumulation
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 12));
+        sy = _mm_add_ps(_mm_mul_ps(cy3, rgbx), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 12), sy);
+
+        sy_idx += 16;
 
         sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
         sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
@@ -3201,7 +3205,10 @@ pub unsafe fn scale_down_rgba_nogamma(
 ) {
     let tables = srgb::tables();
     let i2f = tables.i2f.as_ptr();
-    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy0 = _mm_set1_ps(*coeffs_y.as_ptr());
+    let cy1 = _mm_set1_ps(*coeffs_y.as_ptr().add(1));
+    let cy2 = _mm_set1_ps(*coeffs_y.as_ptr().add(2));
+    let cy3 = _mm_set1_ps(*coeffs_y.as_ptr().add(3));
 
     let mut sum_r = _mm_setzero_ps();
     let mut sum_g = _mm_setzero_ps();
@@ -3299,25 +3306,29 @@ pub unsafe fn scale_down_rgba_nogamma(
             }
         }
 
+        // Vertical accumulation using interleaved sums_y layout:
+        // [R0 G0 B0 A0 | R1 G1 B1 A1 | R2 G2 B2 A2 | R3 G3 B3 A3]
+        let rg = _mm_unpacklo_ps(sum_r, sum_g);
+        let ba = _mm_unpacklo_ps(sum_b, sum_a);
+        let rgba = _mm_movelh_ps(rg, ba);
+
         let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_add_ps(_mm_mul_ps(cy0, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
 
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
+        sy = _mm_add_ps(_mm_mul_ps(cy1, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
 
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
+        sy = _mm_add_ps(_mm_mul_ps(cy2, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
 
-        sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_a, sum_a, mm_shuffle(0, 0, 0, 0));
-        _mm_storeu_ps(sy_ptr.add(sy_idx), _mm_add_ps(_mm_mul_ps(cy, sample), sy));
-        sy_idx += 4;
+        sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 12));
+        sy = _mm_add_ps(_mm_mul_ps(cy3, rgba), sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 12), sy);
+
+        sy_idx += 16;
 
         sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
         sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
