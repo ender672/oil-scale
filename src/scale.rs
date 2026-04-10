@@ -1438,840 +1438,37 @@ impl OilScale {
     }
 
     fn up_scale_in(&mut self, input: &[u8]) {
-        let rb_offset = self.get_rb_line(self.in_pos % 4);
-        let sl_len = self.cs.components() * self.out_width as usize;
-
-        match self.cs {
-            ColorSpace::RGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgb(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgb(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgb(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::RGBA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgba(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgba(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgba(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::ARGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_argb(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_argb(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_argb(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::RGBX => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgbx(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgbx(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgbx(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::G => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_g(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_g(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_g(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::GA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_ga(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_ga(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_ga(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::CMYK => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_cmyk(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_cmyk(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_cmyk(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::RgbNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgb_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgb_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgb_nogamma(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::RgbaNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgba_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgba_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgba_nogamma(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-            ColorSpace::RgbxNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::xscale_up_rgbx_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::xscale_up_rgbx_nogamma(
-                        input,
-                        self.in_width,
-                        &mut self.rb[rb_offset..rb_offset + sl_len],
-                        &self.coeffs_x,
-                        &self.borders_x,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                xscale_up_rgbx_nogamma(
-                    input,
-                    self.in_width,
-                    &mut self.rb[rb_offset..rb_offset + sl_len],
-                    &self.coeffs_x,
-                    &self.borders_x,
-                );
-            }
-        }
+        #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+        // Safety: SSE2 is baseline on x86_64
+        unsafe { self.up_scale_in_x86(input); }
+        #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+        unsafe { self.up_scale_in_neon(input); }
+        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
+        self.up_scale_in_scalar(input);
 
         self.in_pos += 1;
     }
 
     fn up_scale_out(&mut self, output: &mut [u8]) {
-        let cmp = self.cs.components();
-        let sl_len = cmp * self.out_width as usize;
-
-        let offsets: [usize; 4] = [
-            self.get_rb_line(self.in_pos % 4),
-            self.get_rb_line((self.in_pos + 1) % 4),
-            self.get_rb_line((self.in_pos + 2) % 4),
-            self.get_rb_line((self.in_pos + 3) % 4),
-        ];
-
-        let lines: [&[f32]; 4] = [
-            &self.rb[offsets[0]..offsets[0] + sl_len],
-            &self.rb[offsets[1]..offsets[1] + sl_len],
-            &self.rb[offsets[2]..offsets[2] + sl_len],
-            &self.rb[offsets[3]..offsets[3] + sl_len],
-        ];
-
-        let coeff_start = self.out_pos as usize * 4;
-        let coeffs = &self.coeffs_y[coeff_start..coeff_start + 4];
-
-        match self.cs {
-            ColorSpace::RGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_rgb(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_rgb(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_rgb(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::RGBA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_rgba(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_rgba(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_rgba(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::ARGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_argb(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_argb(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_argb(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::RGBX => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_rgbx(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_rgbx(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_rgbx(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_g(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_g(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_g(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::GA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_ga(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_ga(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_ga(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::RgbaNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_rgba_nogamma(lines, sl_len, coeffs, output);
-            }
-            ColorSpace::RgbxNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output);
-            }
-        }
+        #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+        // Safety: SSE2 is baseline on x86_64
+        unsafe { self.up_scale_out_x86(output); }
+        #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+        unsafe { self.up_scale_out_neon(output); }
+        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
+        self.up_scale_out_scalar(output);
 
         self.borders_y[self.in_pos as usize - 1] -= 1;
     }
 
     fn down_scale_in(&mut self, input: &[u8]) {
-        let coeffs_y_start = self.in_pos as usize * 4;
-        let coeffs_y = [
-            self.coeffs_y[coeffs_y_start],
-            self.coeffs_y[coeffs_y_start + 1],
-            self.coeffs_y[coeffs_y_start + 2],
-            self.coeffs_y[coeffs_y_start + 3],
-        ];
-
-        match self.cs {
-            ColorSpace::RGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_rgb(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgb(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgb(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                );
-            }
-            ColorSpace::RGBA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_rgba(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgba(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgba(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                    self.sums_y_tap,
-                );
-            }
-            ColorSpace::ARGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_argb(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_argb(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_argb(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                    self.sums_y_tap,
-                );
-            }
-            ColorSpace::RGBX => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_rgbx(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgbx(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgbx(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                    self.sums_y_tap,
-                );
-            }
-            ColorSpace::G => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                        if self.in_width >= self.out_width * 2 {
-                            avx2::scale_down_g_heavy(
-                                input,
-                                &mut self.sums_y,
-                                self.out_width,
-                                &self.coeffs_x,
-                                &self.borders_x,
-                                &coeffs_y,
-                            );
-                        } else {
-                            avx2::scale_down_g(
-                                input,
-                                &mut self.sums_y,
-                                self.out_width,
-                                &self.coeffs_x,
-                                &self.borders_x,
-                                &coeffs_y,
-                            );
-                        }
-                    } else {
-                        sse2::scale_down_g(
-                            input,
-                            &mut self.sums_y,
-                            self.out_width,
-                            &self.coeffs_x,
-                            &self.borders_x,
-                            &coeffs_y,
-                        );
-                    }
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_g(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_g(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                );
-            }
-            ColorSpace::GA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_ga(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_ga(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_ga(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                );
-            }
-            ColorSpace::CMYK => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_cmyk(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_cmyk(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_cmyk(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                );
-            }
-            ColorSpace::RgbNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::scale_down_rgb_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgb_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgb_nogamma(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                );
-            }
-            ColorSpace::RgbaNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                        avx2::scale_down_rgba_nogamma(
-                            input,
-                            &mut self.sums_y,
-                            self.out_width,
-                            &self.coeffs_x,
-                            &self.borders_x,
-                            &coeffs_y,
-                            self.sums_y_tap,
-                        );
-                    } else {
-                        sse2::scale_down_rgba_nogamma(
-                            input,
-                            &mut self.sums_y,
-                            self.out_width,
-                            &self.coeffs_x,
-                            &self.borders_x,
-                            &coeffs_y,
-                            self.sums_y_tap,
-                        );
-                    }
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgba_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgba_nogamma(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                    self.sums_y_tap,
-                );
-            }
-            ColorSpace::RgbxNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                        avx2::scale_down_rgbx_nogamma(
-                            input,
-                            &mut self.sums_y,
-                            self.out_width,
-                            &self.coeffs_x,
-                            &self.borders_x,
-                            &coeffs_y,
-                            self.sums_y_tap,
-                        );
-                    } else {
-                        sse2::scale_down_rgbx_nogamma(
-                            input,
-                            &mut self.sums_y,
-                            self.out_width,
-                            &self.coeffs_x,
-                            &self.borders_x,
-                            &coeffs_y,
-                            self.sums_y_tap,
-                        );
-                    }
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::scale_down_rgbx_nogamma(
-                        input,
-                        &mut self.sums_y,
-                        self.out_width,
-                        &self.coeffs_x,
-                        &self.borders_x,
-                        &coeffs_y,
-                        self.sums_y_tap,
-                    );
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                scale_down_rgbx_nogamma(
-                    input,
-                    &mut self.sums_y,
-                    self.out_width,
-                    &self.coeffs_x,
-                    &self.borders_x,
-                    &coeffs_y,
-                    self.sums_y_tap,
-                );
-            }
-        }
+        #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+        // Safety: SSE2 is baseline on x86_64
+        unsafe { self.down_scale_in_x86(input); }
+        #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+        unsafe { self.down_scale_in_neon(input); }
+        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
+        self.down_scale_in_scalar(input);
 
         self.borders_y[self.out_pos as usize] -= 1;
         self.in_pos += 1;
@@ -2306,117 +1503,410 @@ pub fn fix_ratio(
 
 impl OilScale {
     fn down_scale_out(&mut self, output: &mut [u8]) {
+        #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+        // Safety: SSE2 is baseline on x86_64
+        unsafe { self.down_scale_out_x86(output); }
+        #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+        unsafe { self.down_scale_out_neon(output); }
+        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
+        self.down_scale_out_scalar(output);
+
+        self.sums_y_tap = (self.sums_y_tap + 1) & 3;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// x86_64 SIMD dispatch (SSE2 baseline + runtime AVX2/FMA)
+// ---------------------------------------------------------------------------
+#[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
+impl OilScale {
+    unsafe fn up_scale_in_x86(&mut self, input: &[u8]) {
+        let rb_offset = self.get_rb_line(self.in_pos % 4);
+        let sl_len = self.cs.components() * self.out_width as usize;
+        let out = &mut self.rb[rb_offset..rb_offset + sl_len];
+
+        match self.cs {
+            ColorSpace::RGB => sse2::xscale_up_rgb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBA => sse2::xscale_up_rgba(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::ARGB => sse2::xscale_up_argb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBX => sse2::xscale_up_rgbx(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::G => sse2::xscale_up_g(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::GA => sse2::xscale_up_ga(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::CMYK => sse2::xscale_up_cmyk(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbNoGamma => sse2::xscale_up_rgb_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbaNoGamma => sse2::xscale_up_rgba_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbxNoGamma => sse2::xscale_up_rgbx_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+        }
+    }
+
+    unsafe fn up_scale_out_x86(&mut self, output: &mut [u8]) {
+        let cmp = self.cs.components();
+        let sl_len = cmp * self.out_width as usize;
+
+        let offsets: [usize; 4] = [
+            self.get_rb_line(self.in_pos % 4),
+            self.get_rb_line((self.in_pos + 1) % 4),
+            self.get_rb_line((self.in_pos + 2) % 4),
+            self.get_rb_line((self.in_pos + 3) % 4),
+        ];
+
+        let lines: [&[f32]; 4] = [
+            &self.rb[offsets[0]..offsets[0] + sl_len],
+            &self.rb[offsets[1]..offsets[1] + sl_len],
+            &self.rb[offsets[2]..offsets[2] + sl_len],
+            &self.rb[offsets[3]..offsets[3] + sl_len],
+        ];
+
+        let coeff_start = self.out_pos as usize * 4;
+        let coeffs = &self.coeffs_y[coeff_start..coeff_start + 4];
+
+        match self.cs {
+            ColorSpace::RGB => sse2::yscale_up_rgb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBA => sse2::yscale_up_rgba(lines, sl_len, coeffs, output),
+            ColorSpace::ARGB => sse2::yscale_up_argb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBX => sse2::yscale_up_rgbx(lines, sl_len, coeffs, output),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => sse2::yscale_up_g(lines, sl_len, coeffs, output),
+            ColorSpace::GA => sse2::yscale_up_ga(lines, sl_len, coeffs, output),
+            ColorSpace::RgbaNoGamma => sse2::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output),
+            ColorSpace::RgbxNoGamma => sse2::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output),
+        }
+    }
+
+    unsafe fn down_scale_in_x86(&mut self, input: &[u8]) {
+        let coeffs_y_start = self.in_pos as usize * 4;
+        let coeffs_y = [
+            self.coeffs_y[coeffs_y_start],
+            self.coeffs_y[coeffs_y_start + 1],
+            self.coeffs_y[coeffs_y_start + 2],
+            self.coeffs_y[coeffs_y_start + 3],
+        ];
+
+        match self.cs {
+            ColorSpace::RGB => sse2::scale_down_rgb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RGBA => sse2::scale_down_rgba(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::ARGB => sse2::scale_down_argb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::RGBX => sse2::scale_down_rgbx(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::G => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    if self.in_width >= self.out_width * 2 {
+                        avx2::scale_down_g_heavy(
+                            input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                        );
+                    } else {
+                        avx2::scale_down_g(
+                            input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                        );
+                    }
+                } else {
+                    sse2::scale_down_g(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                }
+            }
+            ColorSpace::GA => sse2::scale_down_ga(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::CMYK => sse2::scale_down_cmyk(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbNoGamma => sse2::scale_down_rgb_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbaNoGamma => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgba_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                } else {
+                    sse2::scale_down_rgba_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                }
+            }
+            ColorSpace::RgbxNoGamma => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgbx_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                } else {
+                    sse2::scale_down_rgbx_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                }
+            }
+        }
+    }
+
+    unsafe fn down_scale_out_x86(&mut self, output: &mut [u8]) {
         let cmp = self.cs.components();
         let sl_len = self.out_width as usize * cmp;
         let tap = self.sums_y_tap;
 
         match self.cs {
-            ColorSpace::RGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_rgb(&mut self.sums_y, sl_len, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_rgb(&mut self.sums_y, sl_len, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgb(&mut self.sums_y, sl_len, output);
-            }
-            ColorSpace::RGBA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output, tap);
-            }
-            ColorSpace::ARGB => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_argb(&mut self.sums_y, self.out_width as usize, output, tap);
-            }
-            ColorSpace::RGBX => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output, tap);
-            }
-            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_g(&mut self.sums_y, sl_len, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_g(&mut self.sums_y, sl_len, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_g(&mut self.sums_y, sl_len, output);
-            }
-            ColorSpace::GA => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    sse2::yscale_out_ga(&mut self.sums_y, self.out_width, output);
-                }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_ga(&mut self.sums_y, self.out_width, output);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_ga(&mut self.sums_y, self.out_width as usize, output);
-            }
+            ColorSpace::RGB => sse2::yscale_out_rgb(&mut self.sums_y, sl_len, output),
+            ColorSpace::RGBA => sse2::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::ARGB => sse2::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::RGBX => sse2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => sse2::yscale_out_g(&mut self.sums_y, sl_len, output),
+            ColorSpace::GA => sse2::yscale_out_ga(&mut self.sums_y, self.out_width, output),
             ColorSpace::RgbaNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                        avx2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                    } else {
-                        sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                    }
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                } else {
+                    sse2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
             }
             ColorSpace::RgbxNoGamma => {
-                #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
-                unsafe {
-                    if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                        avx2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                    } else {
-                        sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                    }
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
+                } else {
+                    sse2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
                 }
-                #[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
-                unsafe {
-                    neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap);
-                }
-                #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
-                yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output, tap);
             }
         }
+    }
+}
 
-        self.sums_y_tap = (self.sums_y_tap + 1) & 3;
+// ---------------------------------------------------------------------------
+// aarch64 NEON dispatch
+// ---------------------------------------------------------------------------
+#[cfg(all(target_arch = "aarch64", not(feature = "force-scalar")))]
+impl OilScale {
+    unsafe fn up_scale_in_neon(&mut self, input: &[u8]) {
+        let rb_offset = self.get_rb_line(self.in_pos % 4);
+        let sl_len = self.cs.components() * self.out_width as usize;
+        let out = &mut self.rb[rb_offset..rb_offset + sl_len];
+
+        match self.cs {
+            ColorSpace::RGB => neon::xscale_up_rgb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBA => neon::xscale_up_rgba(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::ARGB => neon::xscale_up_argb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBX => neon::xscale_up_rgbx(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::G => neon::xscale_up_g(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::GA => neon::xscale_up_ga(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::CMYK => neon::xscale_up_cmyk(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbNoGamma => neon::xscale_up_rgb_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbaNoGamma => neon::xscale_up_rgba_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbxNoGamma => neon::xscale_up_rgbx_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+        }
+    }
+
+    unsafe fn up_scale_out_neon(&mut self, output: &mut [u8]) {
+        let cmp = self.cs.components();
+        let sl_len = cmp * self.out_width as usize;
+
+        let offsets: [usize; 4] = [
+            self.get_rb_line(self.in_pos % 4),
+            self.get_rb_line((self.in_pos + 1) % 4),
+            self.get_rb_line((self.in_pos + 2) % 4),
+            self.get_rb_line((self.in_pos + 3) % 4),
+        ];
+
+        let lines: [&[f32]; 4] = [
+            &self.rb[offsets[0]..offsets[0] + sl_len],
+            &self.rb[offsets[1]..offsets[1] + sl_len],
+            &self.rb[offsets[2]..offsets[2] + sl_len],
+            &self.rb[offsets[3]..offsets[3] + sl_len],
+        ];
+
+        let coeff_start = self.out_pos as usize * 4;
+        let coeffs = &self.coeffs_y[coeff_start..coeff_start + 4];
+
+        match self.cs {
+            ColorSpace::RGB => neon::yscale_up_rgb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBA => neon::yscale_up_rgba(lines, sl_len, coeffs, output),
+            ColorSpace::ARGB => neon::yscale_up_argb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBX => neon::yscale_up_rgbx(lines, sl_len, coeffs, output),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => neon::yscale_up_g(lines, sl_len, coeffs, output),
+            ColorSpace::GA => neon::yscale_up_ga(lines, sl_len, coeffs, output),
+            ColorSpace::RgbaNoGamma => neon::yscale_up_rgba_nogamma(lines, sl_len, coeffs, output),
+            ColorSpace::RgbxNoGamma => neon::yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output),
+        }
+    }
+
+    unsafe fn down_scale_in_neon(&mut self, input: &[u8]) {
+        let coeffs_y_start = self.in_pos as usize * 4;
+        let coeffs_y = [
+            self.coeffs_y[coeffs_y_start],
+            self.coeffs_y[coeffs_y_start + 1],
+            self.coeffs_y[coeffs_y_start + 2],
+            self.coeffs_y[coeffs_y_start + 3],
+        ];
+
+        match self.cs {
+            ColorSpace::RGB => neon::scale_down_rgb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RGBA => neon::scale_down_rgba(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::ARGB => neon::scale_down_argb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::RGBX => neon::scale_down_rgbx(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::G => neon::scale_down_g(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::GA => neon::scale_down_ga(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::CMYK => neon::scale_down_cmyk(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbNoGamma => neon::scale_down_rgb_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbaNoGamma => neon::scale_down_rgba_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::RgbxNoGamma => neon::scale_down_rgbx_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+        }
+    }
+
+    unsafe fn down_scale_out_neon(&mut self, output: &mut [u8]) {
+        let cmp = self.cs.components();
+        let sl_len = self.out_width as usize * cmp;
+        let tap = self.sums_y_tap;
+
+        match self.cs {
+            ColorSpace::RGB => neon::yscale_out_rgb(&mut self.sums_y, sl_len, output),
+            ColorSpace::RGBA => neon::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::ARGB => neon::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::RGBX => neon::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => neon::yscale_out_g(&mut self.sums_y, sl_len, output),
+            ColorSpace::GA => neon::yscale_out_ga(&mut self.sums_y, self.out_width, output),
+            ColorSpace::RgbaNoGamma => neon::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap),
+            ColorSpace::RgbxNoGamma => neon::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scalar fallback dispatch
+// ---------------------------------------------------------------------------
+#[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
+impl OilScale {
+    fn up_scale_in_scalar(&mut self, input: &[u8]) {
+        let rb_offset = self.get_rb_line(self.in_pos % 4);
+        let sl_len = self.cs.components() * self.out_width as usize;
+        let out = &mut self.rb[rb_offset..rb_offset + sl_len];
+
+        match self.cs {
+            ColorSpace::RGB => xscale_up_rgb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBA => xscale_up_rgba(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::ARGB => xscale_up_argb(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RGBX => xscale_up_rgbx(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::G => xscale_up_g(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::GA => xscale_up_ga(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::CMYK => xscale_up_cmyk(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbNoGamma => xscale_up_rgb_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbaNoGamma => xscale_up_rgba_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+            ColorSpace::RgbxNoGamma => xscale_up_rgbx_nogamma(input, self.in_width, out, &self.coeffs_x, &self.borders_x),
+        }
+    }
+
+    fn up_scale_out_scalar(&mut self, output: &mut [u8]) {
+        let cmp = self.cs.components();
+        let sl_len = cmp * self.out_width as usize;
+
+        let offsets: [usize; 4] = [
+            self.get_rb_line(self.in_pos % 4),
+            self.get_rb_line((self.in_pos + 1) % 4),
+            self.get_rb_line((self.in_pos + 2) % 4),
+            self.get_rb_line((self.in_pos + 3) % 4),
+        ];
+
+        let lines: [&[f32]; 4] = [
+            &self.rb[offsets[0]..offsets[0] + sl_len],
+            &self.rb[offsets[1]..offsets[1] + sl_len],
+            &self.rb[offsets[2]..offsets[2] + sl_len],
+            &self.rb[offsets[3]..offsets[3] + sl_len],
+        ];
+
+        let coeff_start = self.out_pos as usize * 4;
+        let coeffs = &self.coeffs_y[coeff_start..coeff_start + 4];
+
+        match self.cs {
+            ColorSpace::RGB => yscale_up_rgb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBA => yscale_up_rgba(lines, sl_len, coeffs, output),
+            ColorSpace::ARGB => yscale_up_argb(lines, sl_len, coeffs, output),
+            ColorSpace::RGBX => yscale_up_rgbx(lines, sl_len, coeffs, output),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => yscale_up_g(lines, sl_len, coeffs, output),
+            ColorSpace::GA => yscale_up_ga(lines, sl_len, coeffs, output),
+            ColorSpace::RgbaNoGamma => yscale_up_rgba_nogamma(lines, sl_len, coeffs, output),
+            ColorSpace::RgbxNoGamma => yscale_up_rgbx_nogamma(lines, sl_len, coeffs, output),
+        }
+    }
+
+    fn down_scale_in_scalar(&mut self, input: &[u8]) {
+        let coeffs_y_start = self.in_pos as usize * 4;
+        let coeffs_y = [
+            self.coeffs_y[coeffs_y_start],
+            self.coeffs_y[coeffs_y_start + 1],
+            self.coeffs_y[coeffs_y_start + 2],
+            self.coeffs_y[coeffs_y_start + 3],
+        ];
+
+        match self.cs {
+            ColorSpace::RGB => scale_down_rgb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RGBA => scale_down_rgba(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::ARGB => scale_down_argb(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::RGBX => scale_down_rgbx(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::G => scale_down_g(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::GA => scale_down_ga(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::CMYK => scale_down_cmyk(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbNoGamma => scale_down_rgb_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+            ),
+            ColorSpace::RgbaNoGamma => scale_down_rgba_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+            ColorSpace::RgbxNoGamma => scale_down_rgbx_nogamma(
+                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+            ),
+        }
+    }
+
+    fn down_scale_out_scalar(&mut self, output: &mut [u8]) {
+        let cmp = self.cs.components();
+        let sl_len = self.out_width as usize * cmp;
+        let tap = self.sums_y_tap;
+
+        match self.cs {
+            ColorSpace::RGB => yscale_out_rgb(&mut self.sums_y, sl_len, output),
+            ColorSpace::RGBA => yscale_out_rgba(&mut self.sums_y, self.out_width as usize, output, tap),
+            ColorSpace::ARGB => yscale_out_argb(&mut self.sums_y, self.out_width as usize, output, tap),
+            ColorSpace::RGBX => yscale_out_rgbx(&mut self.sums_y, self.out_width as usize, output, tap),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => yscale_out_g(&mut self.sums_y, sl_len, output),
+            ColorSpace::GA => yscale_out_ga(&mut self.sums_y, self.out_width as usize, output),
+            ColorSpace::RgbaNoGamma => yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width as usize, output, tap),
+            ColorSpace::RgbxNoGamma => yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width as usize, output, tap),
+        }
     }
 }
