@@ -471,10 +471,6 @@ fn scale_down_rgba(
     tap: usize,
 ) {
     let tables = srgb::tables();
-    let off0 = tap;
-    let off1 = (tap + 1) & 3;
-    let off2 = (tap + 2) & 3;
-    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4]; // R, G, B, A
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -492,37 +488,42 @@ fn scale_down_rgba(
             cx_idx += 4;
         }
 
+        let mut samples = [0.0f32; 4];
         for j in 0..4 {
-            let sample = sum[j][0];
-            sums_y[sy_idx + off0] += sample * coeffs_y[0];
-            sums_y[sy_idx + off1] += sample * coeffs_y[1];
-            sums_y[sy_idx + off2] += sample * coeffs_y[2];
-            sums_y[sy_idx + off3] += sample * coeffs_y[3];
+            samples[j] = sum[j][0];
             shift_left(&mut sum[j]);
-            sy_idx += 4;
         }
+        for j in 0..4 {
+            let cy = coeffs_y[j];
+            let off = ((tap + j) & 3) * 4;
+            sums_y[sy_idx + off + 0] += samples[0] * cy;
+            sums_y[sy_idx + off + 1] += samples[1] * cy;
+            sums_y[sy_idx + off + 2] += samples[2] * cy;
+            sums_y[sy_idx + off + 3] += samples[3] * cy;
+        }
+        sy_idx += 16;
     }
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgba(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
     let tables = srgb::tables();
-    let tap_off = tap;
+    let tap_off = tap * 4;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let alpha = clampf(sums[s_idx + 12 + tap_off]);
+        let alpha = clampf(sums[s_idx + tap_off + 3]);
         for j in 0..3 {
-            let mut val = sums[s_idx + j * 4 + tap_off];
+            let mut val = sums[s_idx + tap_off + j];
             if alpha != 0.0 {
                 val /= alpha;
             }
             out[o_idx + j] = tables.linear_to_srgb(clampf(val));
-            sums[s_idx + j * 4 + tap_off] = 0.0;
+            sums[s_idx + tap_off + j] = 0.0;
         }
         out[o_idx + 3] = f2i(alpha * 255.0);
-        sums[s_idx + 12 + tap_off] = 0.0;
+        sums[s_idx + tap_off + 3] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -604,10 +605,6 @@ fn scale_down_argb(
     tap: usize,
 ) {
     let tables = srgb::tables();
-    let off0 = tap;
-    let off1 = (tap + 1) & 3;
-    let off2 = (tap + 2) & 3;
-    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4]; // R, G, B, A
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -625,37 +622,42 @@ fn scale_down_argb(
             cx_idx += 4;
         }
 
+        let mut samples = [0.0f32; 4];
         for j in 0..4 {
-            let sample = sum[j][0];
-            sums_y[sy_idx + off0] += sample * coeffs_y[0];
-            sums_y[sy_idx + off1] += sample * coeffs_y[1];
-            sums_y[sy_idx + off2] += sample * coeffs_y[2];
-            sums_y[sy_idx + off3] += sample * coeffs_y[3];
+            samples[j] = sum[j][0];
             shift_left(&mut sum[j]);
-            sy_idx += 4;
         }
+        for j in 0..4 {
+            let cy = coeffs_y[j];
+            let off = ((tap + j) & 3) * 4;
+            sums_y[sy_idx + off + 0] += samples[0] * cy;
+            sums_y[sy_idx + off + 1] += samples[1] * cy;
+            sums_y[sy_idx + off + 2] += samples[2] * cy;
+            sums_y[sy_idx + off + 3] += samples[3] * cy;
+        }
+        sy_idx += 16;
     }
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_argb(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
     let tables = srgb::tables();
-    let tap_off = tap;
+    let tap_off = tap * 4;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let alpha = clampf(sums[s_idx + 12 + tap_off]);
+        let alpha = clampf(sums[s_idx + tap_off + 3]);
         out[o_idx] = f2i(alpha * 255.0);
         for j in 0..3 {
-            let mut val = sums[s_idx + j * 4 + tap_off];
+            let mut val = sums[s_idx + tap_off + j];
             if alpha != 0.0 {
                 val /= alpha;
             }
             out[o_idx + 1 + j] = tables.linear_to_srgb(clampf(val));
-            sums[s_idx + j * 4 + tap_off] = 0.0;
+            sums[s_idx + tap_off + j] = 0.0;
         }
-        sums[s_idx + 12 + tap_off] = 0.0;
+        sums[s_idx + tap_off + 3] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -730,10 +732,6 @@ fn scale_down_rgbx(
     tap: usize,
 ) {
     let tables = srgb::tables();
-    let off0 = tap;
-    let off1 = (tap + 1) & 3;
-    let off2 = (tap + 2) & 3;
-    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4]; // R, G, B, X
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -751,32 +749,37 @@ fn scale_down_rgbx(
             cx_idx += 4;
         }
 
+        let mut samples = [0.0f32; 4];
         for j in 0..4 {
-            let sample = sum[j][0];
-            sums_y[sy_idx + off0] += sample * coeffs_y[0];
-            sums_y[sy_idx + off1] += sample * coeffs_y[1];
-            sums_y[sy_idx + off2] += sample * coeffs_y[2];
-            sums_y[sy_idx + off3] += sample * coeffs_y[3];
+            samples[j] = sum[j][0];
             shift_left(&mut sum[j]);
-            sy_idx += 4;
         }
+        for j in 0..4 {
+            let cy = coeffs_y[j];
+            let off = ((tap + j) & 3) * 4;
+            sums_y[sy_idx + off + 0] += samples[0] * cy;
+            sums_y[sy_idx + off + 1] += samples[1] * cy;
+            sums_y[sy_idx + off + 2] += samples[2] * cy;
+            sums_y[sy_idx + off + 3] += samples[3] * cy;
+        }
+        sy_idx += 16;
     }
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgbx(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
     let tables = srgb::tables();
-    let tap_off = tap;
+    let tap_off = tap * 4;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
         for j in 0..3 {
-            out[o_idx + j] = tables.linear_to_srgb(clampf(sums[s_idx + j * 4 + tap_off]));
-            sums[s_idx + j * 4 + tap_off] = 0.0;
+            out[o_idx + j] = tables.linear_to_srgb(clampf(sums[s_idx + tap_off + j]));
+            sums[s_idx + tap_off + j] = 0.0;
         }
         out[o_idx + 3] = 255;
-        sums[s_idx + 12 + tap_off] = 0.0;
+        sums[s_idx + tap_off + 3] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -1048,10 +1051,6 @@ fn scale_down_rgba_nogamma(
     tap: usize,
 ) {
     let tables = srgb::tables();
-    let off0 = tap;
-    let off1 = (tap + 1) & 3;
-    let off2 = (tap + 2) & 3;
-    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4];
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -1069,15 +1068,20 @@ fn scale_down_rgba_nogamma(
             cx_idx += 4;
         }
 
+        let mut samples = [0.0f32; 4];
         for j in 0..4 {
-            let sample = sum[j][0];
-            sums_y[sy_idx + off0] += sample * coeffs_y[0];
-            sums_y[sy_idx + off1] += sample * coeffs_y[1];
-            sums_y[sy_idx + off2] += sample * coeffs_y[2];
-            sums_y[sy_idx + off3] += sample * coeffs_y[3];
+            samples[j] = sum[j][0];
             shift_left(&mut sum[j]);
-            sy_idx += 4;
         }
+        for j in 0..4 {
+            let cy = coeffs_y[j];
+            let off = ((tap + j) & 3) * 4;
+            sums_y[sy_idx + off + 0] += samples[0] * cy;
+            sums_y[sy_idx + off + 1] += samples[1] * cy;
+            sums_y[sy_idx + off + 2] += samples[2] * cy;
+            sums_y[sy_idx + off + 3] += samples[3] * cy;
+        }
+        sy_idx += 16;
     }
 }
 
@@ -1092,10 +1096,6 @@ fn scale_down_rgbx_nogamma(
     tap: usize,
 ) {
     let tables = srgb::tables();
-    let off0 = tap;
-    let off1 = (tap + 1) & 3;
-    let off2 = (tap + 2) & 3;
-    let off3 = (tap + 3) & 3;
     let mut sum = [[0.0f32; 4]; 4];
     let mut in_idx = 0usize;
     let mut cx_idx = 0usize;
@@ -1112,36 +1112,41 @@ fn scale_down_rgbx_nogamma(
             cx_idx += 4;
         }
 
+        let mut samples = [0.0f32; 4];
         for j in 0..4 {
-            let sample = sum[j][0];
-            sums_y[sy_idx + off0] += sample * coeffs_y[0];
-            sums_y[sy_idx + off1] += sample * coeffs_y[1];
-            sums_y[sy_idx + off2] += sample * coeffs_y[2];
-            sums_y[sy_idx + off3] += sample * coeffs_y[3];
+            samples[j] = sum[j][0];
             shift_left(&mut sum[j]);
-            sy_idx += 4;
         }
+        for j in 0..4 {
+            let cy = coeffs_y[j];
+            let off = ((tap + j) & 3) * 4;
+            sums_y[sy_idx + off + 0] += samples[0] * cy;
+            sums_y[sy_idx + off + 1] += samples[1] * cy;
+            sums_y[sy_idx + off + 2] += samples[2] * cy;
+            sums_y[sy_idx + off + 3] += samples[3] * cy;
+        }
+        sy_idx += 16;
     }
 }
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
-    let tap_off = tap;
+    let tap_off = tap * 4;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
-        let alpha = clampf(sums[s_idx + 12 + tap_off]);
+        let alpha = clampf(sums[s_idx + tap_off + 3]);
         for j in 0..3 {
-            let mut val = sums[s_idx + j * 4 + tap_off];
+            let mut val = sums[s_idx + tap_off + j];
             if alpha != 0.0 {
                 val /= alpha;
             }
             out[o_idx + j] = f2i(clampf(val) * 255.0);
-            sums[s_idx + j * 4 + tap_off] = 0.0;
+            sums[s_idx + tap_off + j] = 0.0;
         }
         out[o_idx + 3] = f2i(alpha * 255.0);
-        sums[s_idx + 12 + tap_off] = 0.0;
+        sums[s_idx + tap_off + 3] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
@@ -1149,17 +1154,17 @@ fn yscale_out_rgba_nogamma(sums: &mut [f32], width: usize, out: &mut [u8], tap: 
 
 #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
 fn yscale_out_rgbx_nogamma(sums: &mut [f32], width: usize, out: &mut [u8], tap: usize) {
-    let tap_off = tap;
+    let tap_off = tap * 4;
     let mut s_idx = 0usize;
     let mut o_idx = 0usize;
 
     for _ in 0..width {
         for j in 0..3 {
-            out[o_idx + j] = f2i(clampf(sums[s_idx + j * 4 + tap_off]) * 255.0);
-            sums[s_idx + j * 4 + tap_off] = 0.0;
+            out[o_idx + j] = f2i(clampf(sums[s_idx + tap_off + j]) * 255.0);
+            sums[s_idx + tap_off + j] = 0.0;
         }
         out[o_idx + 3] = 255;
-        sums[s_idx + 12 + tap_off] = 0.0;
+        sums[s_idx + tap_off + 3] = 0.0;
         s_idx += 16;
         o_idx += 4;
     }
