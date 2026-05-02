@@ -73,6 +73,7 @@ pub struct OilScale {
     borders_y: Vec<i32>,
     sums_y: Vec<f32>,
     sums_y_tap: usize,
+    slots_y: i32,
     rb: Vec<f32>,
     tmp_coeffs: Vec<f32>,
     is_upscale: bool,
@@ -1177,6 +1178,7 @@ impl OilScale {
             borders_y: Vec::new(),
             sums_y: Vec::new(),
             sums_y_tap: 0,
+            slots_y: 0,
             rb: Vec::new(),
             tmp_coeffs: Vec::new(),
             is_upscale,
@@ -1248,6 +1250,7 @@ impl OilScale {
             &mut self.coeffs_y,
             &mut self.borders_y,
         );
+        self.slots_y = 0;
     }
 
     fn downscale_init(&mut self) {
@@ -1283,15 +1286,16 @@ impl OilScale {
             &mut self.borders_y,
             &mut self.tmp_coeffs,
         );
+        self.slots_y = self.borders_y[0];
     }
 
     /// Return the number of input scanlines needed before the next output
     /// scanline can be produced.
     pub fn slots(&self) -> usize {
         if !self.is_upscale {
-            self.borders_y[self.out_pos as usize] as usize
+            self.slots_y as usize
         } else if self.in_pos > 0 {
-            if self.borders_y[self.in_pos as usize - 1] == 0 {
+            if self.slots_y == 0 {
                 1
             } else {
                 0
@@ -1343,7 +1347,7 @@ impl OilScale {
         } else {
             self.down_scale_out(output);
         }
-        self.out_pos += 1;
+        self.advance_out_pos();
         Ok(())
     }
 
@@ -1365,7 +1369,7 @@ impl OilScale {
             return Err(Error::InvalidArgument);
         }
         if self.is_upscale {
-            self.borders_y[self.in_pos as usize - 1] -= 1;
+            self.slots_y -= 1;
         } else {
             // Use yscale_out to shift the sums_y accumulators, discarding
             // the output pixels. This avoids needing layout-specific shift
@@ -1375,7 +1379,7 @@ impl OilScale {
             let mut tmp = vec![0u8; sl_len];
             self.down_scale_out(&mut tmp);
         }
-        self.out_pos += 1;
+        self.advance_out_pos();
         Ok(())
     }
 
@@ -1388,9 +1392,14 @@ impl OilScale {
         self.out_pos = 0;
         self.sums_y_tap = 0;
         if self.is_upscale {
-            self.upscale_init();
+            self.slots_y = 0;
         } else {
-            self.downscale_init();
+            // sums_y carries partial-output accumulator state across input
+            // rows; stale state from a prior pass would corrupt the next.
+            for v in self.sums_y.iter_mut() {
+                *v = 0.0;
+            }
+            self.slots_y = self.borders_y[0];
         }
     }
 
@@ -1403,10 +1412,10 @@ impl OilScale {
         }
         if self.is_upscale {
             self.up_scale_in_scalar(input);
-            self.in_pos += 1;
+            self.advance_in_pos_upscale();
         } else {
             self.down_scale_in_scalar(input);
-            self.borders_y[self.out_pos as usize] -= 1;
+            self.slots_y -= 1;
             self.in_pos += 1;
         }
         Ok(())
@@ -1425,10 +1434,10 @@ impl OilScale {
             if self.is_upscale {
                 // Safety: SSE2 is baseline on x86_64
                 unsafe { self.up_scale_in_x86(input); }
-                self.in_pos += 1;
+                self.advance_in_pos_upscale();
             } else {
                 unsafe { self.down_scale_in_sse2_only(input); }
-                self.borders_y[self.out_pos as usize] -= 1;
+                self.slots_y -= 1;
                 self.in_pos += 1;
             }
             return Ok(());
@@ -1457,11 +1466,11 @@ impl OilScale {
             if self.is_upscale {
                 // Safety: SSE2 is baseline on x86_64 (upscale has no AVX2 paths)
                 unsafe { self.up_scale_in_x86(input); }
-                self.in_pos += 1;
+                self.advance_in_pos_upscale();
             } else {
                 // Safety: AVX2+FMA verified above
                 unsafe { self.down_scale_in_avx2_prefer(input); }
-                self.borders_y[self.out_pos as usize] -= 1;
+                self.slots_y -= 1;
                 self.in_pos += 1;
             }
             return Ok(());
@@ -1485,10 +1494,10 @@ impl OilScale {
             }
             if self.is_upscale {
                 unsafe { self.up_scale_in_neon(input); }
-                self.in_pos += 1;
+                self.advance_in_pos_upscale();
             } else {
                 unsafe { self.down_scale_in_neon(input); }
-                self.borders_y[self.out_pos as usize] -= 1;
+                self.slots_y -= 1;
                 self.in_pos += 1;
             }
             return Ok(());
@@ -1509,12 +1518,12 @@ impl OilScale {
         }
         if self.is_upscale {
             self.up_scale_out_scalar(output);
-            self.borders_y[self.in_pos as usize - 1] -= 1;
+            self.slots_y -= 1;
         } else {
             self.down_scale_out_scalar(output);
             self.sums_y_tap = (self.sums_y_tap + 1) & 3;
         }
-        self.out_pos += 1;
+        self.advance_out_pos();
         Ok(())
     }
 
@@ -1531,12 +1540,12 @@ impl OilScale {
             if self.is_upscale {
                 // Safety: SSE2 is baseline on x86_64
                 unsafe { self.up_scale_out_x86(output); }
-                self.borders_y[self.in_pos as usize - 1] -= 1;
+                self.slots_y -= 1;
             } else {
                 unsafe { self.down_scale_out_sse2_only(output); }
                 self.sums_y_tap = (self.sums_y_tap + 1) & 3;
             }
-            self.out_pos += 1;
+            self.advance_out_pos();
             return Ok(());
         }
         #[cfg(not(target_arch = "x86_64"))]
@@ -1563,13 +1572,13 @@ impl OilScale {
             if self.is_upscale {
                 // Safety: SSE2 is baseline on x86_64 (upscale has no AVX2 paths)
                 unsafe { self.up_scale_out_x86(output); }
-                self.borders_y[self.in_pos as usize - 1] -= 1;
+                self.slots_y -= 1;
             } else {
                 // Safety: AVX2+FMA verified above
                 unsafe { self.down_scale_out_avx2_prefer(output); }
                 self.sums_y_tap = (self.sums_y_tap + 1) & 3;
             }
-            self.out_pos += 1;
+            self.advance_out_pos();
             return Ok(());
         }
         #[cfg(not(target_arch = "x86_64"))]
@@ -1591,12 +1600,12 @@ impl OilScale {
             }
             if self.is_upscale {
                 unsafe { self.up_scale_out_neon(output); }
-                self.borders_y[self.in_pos as usize - 1] -= 1;
+                self.slots_y -= 1;
             } else {
                 unsafe { self.down_scale_out_neon(output); }
                 self.sums_y_tap = (self.sums_y_tap + 1) & 3;
             }
-            self.out_pos += 1;
+            self.advance_out_pos();
             return Ok(());
         }
         #[cfg(not(target_arch = "aarch64"))]
@@ -1611,6 +1620,21 @@ impl OilScale {
         line as usize * sl_len
     }
 
+    // Bumps out_pos and re-primes slots_y from the immutable borders_y for
+    // the next downscale output row. Call after every successful read.
+    fn advance_out_pos(&mut self) {
+        self.out_pos += 1;
+        if !self.is_upscale && (self.out_pos as usize) < self.out_height as usize {
+            self.slots_y = self.borders_y[self.out_pos as usize];
+        }
+    }
+
+    // Bumps in_pos and re-primes slots_y from borders_y for upscale.
+    fn advance_in_pos_upscale(&mut self) {
+        self.in_pos += 1;
+        self.slots_y = self.borders_y[(self.in_pos - 1) as usize];
+    }
+
     fn up_scale_in(&mut self, input: &[u8]) {
         #[cfg(all(target_arch = "x86_64", not(feature = "force-scalar")))]
         // Safety: SSE2 is baseline on x86_64
@@ -1620,7 +1644,7 @@ impl OilScale {
         #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
         self.up_scale_in_scalar(input);
 
-        self.in_pos += 1;
+        self.advance_in_pos_upscale();
     }
 
     fn up_scale_out(&mut self, output: &mut [u8]) {
@@ -1632,7 +1656,7 @@ impl OilScale {
         #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
         self.up_scale_out_scalar(output);
 
-        self.borders_y[self.in_pos as usize - 1] -= 1;
+        self.slots_y -= 1;
     }
 
     fn down_scale_in(&mut self, input: &[u8]) {
@@ -1644,7 +1668,7 @@ impl OilScale {
         #[cfg(any(not(any(target_arch = "x86_64", target_arch = "aarch64")), feature = "force-scalar"))]
         self.down_scale_in_scalar(input);
 
-        self.borders_y[self.out_pos as usize] -= 1;
+        self.slots_y -= 1;
         self.in_pos += 1;
     }
 }
