@@ -21,19 +21,6 @@ pub fn calc_taps(dim_in: u32, dim_out: u32) -> usize {
     }
 }
 
-/// Map from discrete output coordinate to continuous source coordinate.
-pub fn map(dim_in: u32, dim_out: u32, pos: u32) -> f64 {
-    (pos as f64 + 0.5) * (dim_in as f64 / dim_out as f64) - 0.5
-}
-
-/// Split mapped coordinate into integer position and fractional remainder.
-pub fn split_map(dim_in: u32, dim_out: u32, pos: u32) -> (i32, f32) {
-    let smp = map(dim_in, dim_out, pos);
-    let smp_i = if smp < 0.0 { -1 } else { smp as i32 };
-    let rest = (smp - smp_i as f64) as f32;
-    (smp_i, rest)
-}
-
 /// Calculate filter coefficients for a given fractional offset.
 /// Coefficients are normalized to sum to 1.0.
 pub fn calc_coeffs(coeffs: &mut [f32], tx: f32, taps: usize, ltrim: usize, rtrim: usize) {
@@ -67,8 +54,12 @@ pub fn scale_up_coeffs(
     let max_pos = in_dim as i32 - 1;
     let mut coeff_offset = 0usize;
 
-    for i in 0..out_dim {
-        let (smp_i, tx) = split_map(in_dim, out_dim, i);
+    let step = in_dim as f64 / out_dim as f64;
+    let mut pos_d = 0.5 * step - 0.5;
+
+    for _ in 0..out_dim {
+        let smp_i = if pos_d < 0.0 { -1 } else { pos_d as i32 };
+        let tx = (pos_d - smp_i as f64) as f32;
         let start = smp_i - 1;
         let end = smp_i + 2;
 
@@ -94,6 +85,7 @@ pub fn scale_up_coeffs(
         );
 
         coeff_offset += 4;
+        pos_d += step;
     }
 }
 
@@ -112,8 +104,12 @@ pub fn scale_down_coeffs(
     let taps = calc_taps(in_dim, out_dim);
     let mut ends = [-1i32; 4];
 
+    let tap_mult = in_dim as f64 / out_dim as f64;
+    let mut center = 0.5 * tap_mult - 0.5;
+
     for i in 0..out_dim as usize {
-        let (smp_i, tx) = split_map(in_dim, out_dim, i as u32);
+        let smp_i = if center < 0.0 { -1 } else { center as i32 };
+        let tx = (center - smp_i as f64) as f32;
 
         let smp_start = smp_i - (taps as i32 / 2 - 1);
         let mut smp_end = smp_i + taps as i32 / 2;
@@ -150,5 +146,7 @@ pub fn scale_down_coeffs(
 
             coeff_buf[pos * 4 + offset] = coeff;
         }
+
+        center += tap_mult;
     }
 }
