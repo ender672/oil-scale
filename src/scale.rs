@@ -1793,15 +1793,42 @@ impl OilScale {
                     );
                 }
             }
-            ColorSpace::RGBA => sse2::scale_down_rgba(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
-            ),
-            ColorSpace::ARGB => sse2::scale_down_argb(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
-            ),
-            ColorSpace::RGBX => sse2::scale_down_rgbx(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
-            ),
+            ColorSpace::RGBA => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgba::<3, 0>(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                        srgb::tables().s2l.as_ptr(),
+                    );
+                } else {
+                    sse2::scale_down_rgba(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                }
+            }
+            ColorSpace::ARGB => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgba::<0, 1>(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                        srgb::tables().s2l.as_ptr(),
+                    );
+                } else {
+                    sse2::scale_down_argb(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                }
+            }
+            ColorSpace::RGBX => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgbx(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                        srgb::tables().s2l.as_ptr(),
+                    );
+                } else {
+                    sse2::scale_down_rgbx(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                    );
+                }
+            }
             ColorSpace::G => {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
                     if self.in_width >= self.out_width * 2 {
@@ -1839,8 +1866,9 @@ impl OilScale {
             }
             ColorSpace::RgbaNoGamma => {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                    avx2::scale_down_rgba_nogamma(
+                    avx2::scale_down_rgba::<3, 0>(
                         input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                        srgb::tables().i2f.as_ptr(),
                     );
                 } else {
                     sse2::scale_down_rgba_nogamma(
@@ -1850,8 +1878,9 @@ impl OilScale {
             }
             ColorSpace::RgbxNoGamma => {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                    avx2::scale_down_rgbx_nogamma(
+                    avx2::scale_down_rgbx(
                         input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                        srgb::tables().i2f.as_ptr(),
                     );
                 } else {
                     sse2::scale_down_rgbx_nogamma(
@@ -1950,14 +1979,17 @@ impl OilScale {
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
                 srgb::tables().s2l.as_ptr(),
             ),
-            ColorSpace::RGBA => sse2::scale_down_rgba(
+            ColorSpace::RGBA => avx2::scale_down_rgba::<3, 0>(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                srgb::tables().s2l.as_ptr(),
             ),
-            ColorSpace::ARGB => sse2::scale_down_argb(
+            ColorSpace::ARGB => avx2::scale_down_rgba::<0, 1>(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                srgb::tables().s2l.as_ptr(),
             ),
-            ColorSpace::RGBX => sse2::scale_down_rgbx(
+            ColorSpace::RGBX => avx2::scale_down_rgbx(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                srgb::tables().s2l.as_ptr(),
             ),
             ColorSpace::G => {
                 if self.in_width >= self.out_width * 2 {
@@ -1980,11 +2012,13 @@ impl OilScale {
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
                 srgb::tables().i2f.as_ptr(),
             ),
-            ColorSpace::RgbaNoGamma => avx2::scale_down_rgba_nogamma(
+            ColorSpace::RgbaNoGamma => avx2::scale_down_rgba::<3, 0>(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                srgb::tables().i2f.as_ptr(),
             ),
-            ColorSpace::RgbxNoGamma => avx2::scale_down_rgbx_nogamma(
+            ColorSpace::RgbxNoGamma => avx2::scale_down_rgbx(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
+                srgb::tables().i2f.as_ptr(),
             ),
         }
     }

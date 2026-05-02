@@ -414,10 +414,16 @@ pub unsafe fn scale_down_rgb(
     }
 }
 
-/// AVX2 downscale for RGBX_NOGAMMA: FMA x-filtering + 256-bit y-accumulation + prefetch.
+/// AVX2 downscale for RGBX (4-byte stride, no alpha): FMA x-filtering + 256-bit
+/// y-accumulation + prefetch.
+///
+/// Mirrors C's `oil_scale_down_rgbx_avx2` (oil_resample_avx2.c:1586). `lut`
+/// selects the input gamma path: `s2l_map` for `OIL_CS_RGBX`, `i2f_map` for
+/// `OIL_CS_RGBX_NOGAMMA`. The C dispatcher (line 2065/2074) calls the same
+/// function with different lookup tables.
 #[target_feature(enable = "avx2,fma")]
 #[inline]
-pub unsafe fn scale_down_rgbx_nogamma(
+pub unsafe fn scale_down_rgbx(
     input: &[u8],
     sums_y: &mut [f32],
     out_width: u32,
@@ -425,9 +431,8 @@ pub unsafe fn scale_down_rgbx_nogamma(
     border_buf: &[i32],
     coeffs_y: &[f32],
     tap: usize,
+    lut: *const f32,
 ) {
-    let tables = srgb::tables();
-    let i2f = tables.i2f.as_ptr();
 
     // Precompute 256-bit coefficient vectors ordered by physical slot
     let cy_lo;
@@ -473,18 +478,18 @@ pub unsafe fn scale_down_rgbx_nogamma(
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
                 let cx2 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize));
                 sum_r = _mm_fmadd_ps(cx, s, sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize));
                 sum_g = _mm_fmadd_ps(cx, s, sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize));
                 sum_b = _mm_fmadd_ps(cx, s, sum_b);
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 4) as usize));
                 sum_r2 = _mm_fmadd_ps(cx2, s, sum_r2);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 5) as usize));
                 sum_g2 = _mm_fmadd_ps(cx2, s, sum_g2);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 6) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 6) as usize));
                 sum_b2 = _mm_fmadd_ps(cx2, s, sum_b2);
 
                 in_idx += 8;
@@ -495,11 +500,11 @@ pub unsafe fn scale_down_rgbx_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize));
                 sum_r = _mm_fmadd_ps(cx, s, sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize));
                 sum_g = _mm_fmadd_ps(cx, s, sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize));
                 sum_b = _mm_fmadd_ps(cx, s, sum_b);
 
                 in_idx += 4;
@@ -515,11 +520,11 @@ pub unsafe fn scale_down_rgbx_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize));
                 sum_r = _mm_fmadd_ps(cx, s, sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize));
                 sum_g = _mm_fmadd_ps(cx, s, sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize));
                 sum_b = _mm_fmadd_ps(cx, s, sum_b);
 
                 in_idx += 4;
@@ -554,9 +559,18 @@ pub unsafe fn scale_down_rgbx_nogamma(
     }
 }
 
-/// AVX2 downscale for RGBA_NOGAMMA: horizontal x-filtering with premultiplied alpha + 256-bit FMA y-accumulation.
+/// AVX2 downscale shared between RGBA, ARGB, and RGBA_NOGAMMA: horizontal
+/// x-filtering with premultiplied alpha + 256-bit FMA y-accumulation.
+///
+/// Mirrors C's `oil_scale_down_rgba_avx2` (oil_resample_avx2.c:1320).
+/// `A_OFF` is the byte offset of the alpha sample within each 4-byte pixel
+/// (3 for RGBA, 0 for ARGB); `RGB_OFF` is the offset of the first RGB byte
+/// (0 for RGBA, 1 for ARGB). Alpha is always read through `i2f_map`; `lut`
+/// is `s2l_map` for gamma callers and `i2f_map` for `RGBA_NOGAMMA`.
+/// Mirrors the C dispatcher (line 2056/2062/2071), which calls the same
+/// function with different (a_off, rgb_off, lut) triples.
 #[target_feature(enable = "avx2,fma")]
-pub unsafe fn scale_down_rgba_nogamma(
+pub unsafe fn scale_down_rgba<const A_OFF: usize, const RGB_OFF: usize>(
     input: &[u8],
     sums_y: &mut [f32],
     out_width: u32,
@@ -564,6 +578,7 @@ pub unsafe fn scale_down_rgba_nogamma(
     border_buf: &[i32],
     coeffs_y: &[f32],
     tap: usize,
+    lut: *const f32,
 ) {
     let tables = srgb::tables();
     let i2f = tables.i2f.as_ptr();
@@ -615,23 +630,23 @@ pub unsafe fn scale_down_rgba_nogamma(
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
                 let cx2 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
 
-                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + A_OFF) as usize)));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF) as usize));
                 sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 1) as usize));
                 sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 2) as usize));
                 sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
                 sum_a = _mm_add_ps(cx_a, sum_a);
 
-                let cx2_a = _mm_mul_ps(cx2, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 7) as usize)));
+                let cx2_a = _mm_mul_ps(cx2, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4 + A_OFF) as usize)));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 4 + RGB_OFF) as usize));
                 sum_r2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_r2);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 4 + RGB_OFF + 1) as usize));
                 sum_g2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_g2);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 6) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 4 + RGB_OFF + 2) as usize));
                 sum_b2 = _mm_add_ps(_mm_mul_ps(cx2_a, s), sum_b2);
                 sum_a2 = _mm_add_ps(cx2_a, sum_a2);
 
@@ -643,13 +658,13 @@ pub unsafe fn scale_down_rgba_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + A_OFF) as usize)));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF) as usize));
                 sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 1) as usize));
                 sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 2) as usize));
                 sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
                 sum_a = _mm_add_ps(cx_a, sum_a);
 
@@ -667,13 +682,13 @@ pub unsafe fn scale_down_rgba_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)));
+                let cx_a = _mm_mul_ps(cx, _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + A_OFF) as usize)));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF) as usize));
                 sum_r = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 1) as usize));
                 sum_g = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + RGB_OFF + 2) as usize));
                 sum_b = _mm_add_ps(_mm_mul_ps(cx_a, s), sum_b);
                 sum_a = _mm_add_ps(cx_a, sum_a);
 
