@@ -25,6 +25,18 @@ unsafe fn yacc_fma2(sums_y_out: *mut f32, s_lo: __m128, s_hi: __m128, cy256: __m
     _mm256_storeu_ps(sums_y_out, sy);
 }
 
+/// Single-channel vertical FMA accumulate: load 4 tap floats from
+/// `sums_y_out`, FMA with broadcast(`sum`[0]) × `coeffs_y`, store back.
+/// Mirrors C's `oil_yacc_fma1_avx2`.
+#[target_feature(enable = "avx2,fma")]
+#[inline]
+unsafe fn yacc_fma1(sums_y_out: *mut f32, sum: __m128, coeffs_y: __m128) {
+    let sample = _mm_shuffle_ps(sum, sum, mm_shuffle(0, 0, 0, 0));
+    let sy = _mm_loadu_ps(sums_y_out);
+    let sy = _mm_fmadd_ps(coeffs_y, sample, sy);
+    _mm_storeu_ps(sums_y_out, sy);
+}
+
 /// AVX2 downscale for G: horizontal x-filtering + 256-bit y-accumulation.
 /// Processes 2 output pixels at a time using 256-bit AVX2 for vertical accumulation.
 #[target_feature(enable = "avx2,fma")]
@@ -287,6 +299,7 @@ pub unsafe fn scale_down_rgb(
     lut: *const f32,
 ) {
     let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy256 = _mm256_set_m128(cy, cy);
 
     let mut sum_r = _mm_setzero_ps();
     let mut sum_g = _mm_setzero_ps();
@@ -385,24 +398,11 @@ pub unsafe fn scale_down_rgb(
             }
         }
 
-        // Vertical accumulation: tap-major layout (4 floats per channel),
-        // distributing this output pixel's lane-0 sample across 4 ring-buffer
-        // taps via cy. Matches sse2::scale_down_rgb_nogamma so the existing
-        // yscale_out_g consumer reads the same memory.
-        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
-        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_fmadd_ps(cy, sample, sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
-
-        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
-        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_fmadd_ps(cy, sample, sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
-
-        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
-        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
-        sy = _mm_fmadd_ps(cy, sample, sy);
-        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
+        // Vertical accumulation: tap-major layout (4 floats per channel).
+        // Pack R+G into one 256-bit FMA, leaving B for a 128-bit FMA.
+        // Mirrors C's `oil_yacc_fma2_avx2` + `oil_yacc_fma1_avx2` pair.
+        yacc_fma2(sy_ptr.add(sy_idx), sum_r, sum_g, cy256);
+        yacc_fma1(sy_ptr.add(sy_idx + 8), sum_b, cy);
 
         sy_idx += 12;
 
