@@ -1816,9 +1816,17 @@ impl OilScale {
             ColorSpace::CMYK => sse2::scale_down_cmyk(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
-            ColorSpace::RgbNoGamma => sse2::scale_down_rgb_nogamma(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
-            ),
+            ColorSpace::RgbNoGamma => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgb_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                } else {
+                    sse2::scale_down_rgb_nogamma(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                }
+            }
             ColorSpace::RgbaNoGamma => {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
                     avx2::scale_down_rgba_nogamma(
@@ -1956,7 +1964,7 @@ impl OilScale {
             ColorSpace::CMYK => sse2::scale_down_cmyk(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
-            ColorSpace::RgbNoGamma => sse2::scale_down_rgb_nogamma(
+            ColorSpace::RgbNoGamma => avx2::scale_down_rgb_nogamma(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
             ColorSpace::RgbaNoGamma => avx2::scale_down_rgba_nogamma(

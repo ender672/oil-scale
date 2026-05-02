@@ -250,6 +250,154 @@ pub unsafe fn scale_down_g_heavy(
     }
 }
 
+/// AVX2 downscale for RGB_NOGAMMA (3-byte stride): horizontal x-filtering with
+/// 256-bit-widened pair-tap FMA loop + 128-bit y-accumulation.
+///
+/// Mirrors C's `oil_scale_down_rgb_avx2` (post-a0c05fc): the pair-tap inner
+/// loop packs even/odd taps into the lo/hi lanes of a single 256-bit
+/// accumulator per channel, replacing 6 × 128-bit FMAs with 3 × 256-bit FMAs.
+/// Carry-over state stays 4-wide; the running 128-bit `sum_*` is sunk into
+/// the low lane at pixel start and folded back at pixel end. The trail
+/// (border-buf parity tail) and small-border path keep 128-bit FMAs.
+#[target_feature(enable = "avx2,fma")]
+pub unsafe fn scale_down_rgb_nogamma(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let cy = _mm_loadu_ps(coeffs_y.as_ptr());
+
+    let mut sum_r = _mm_setzero_ps();
+    let mut sum_g = _mm_setzero_ps();
+    let mut sum_b = _mm_setzero_ps();
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+
+        if border >= 4 {
+            // Sink running carry-over into lo lane; hi lane starts fresh.
+            let zero128 = _mm_setzero_ps();
+            let mut sum_r256 =
+                _mm256_insertf128_ps(_mm256_castps128_ps256(sum_r), zero128, 1);
+            let mut sum_g256 =
+                _mm256_insertf128_ps(_mm256_castps128_ps256(sum_g), zero128, 1);
+            let mut sum_b256 =
+                _mm256_insertf128_ps(_mm256_castps128_ps256(sum_b), zero128, 1);
+
+            let mut j = 0;
+            while j + 1 < border {
+                let cx = _mm256_loadu_ps(cx_ptr.add(cx_idx));
+                let sr = _mm256_set_m128(
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)),
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize)),
+                );
+                let sg = _mm256_set_m128(
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize)),
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize)),
+                );
+                let sb = _mm256_set_m128(
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize)),
+                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize)),
+                );
+
+                sum_r256 = _mm256_fmadd_ps(cx, sr, sum_r256);
+                sum_g256 = _mm256_fmadd_ps(cx, sg, sum_g256);
+                sum_b256 = _mm256_fmadd_ps(cx, sb, sum_b256);
+
+                in_idx += 6;
+                cx_idx += 8;
+                j += 2;
+            }
+
+            // Fold lo/hi lanes back to 128-bit running sum.
+            sum_r = _mm_add_ps(
+                _mm256_castps256_ps128(sum_r256),
+                _mm256_extractf128_ps(sum_r256, 1),
+            );
+            sum_g = _mm_add_ps(
+                _mm256_castps256_ps128(sum_g256),
+                _mm256_extractf128_ps(sum_g256, 1),
+            );
+            sum_b = _mm_add_ps(
+                _mm256_castps256_ps128(sum_b256),
+                _mm256_extractf128_ps(sum_b256, 1),
+            );
+
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_fmadd_ps(cx, s, sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_fmadd_ps(cx, s, sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_fmadd_ps(cx, s, sum_b);
+
+                in_idx += 3;
+                cx_idx += 4;
+                j += 1;
+            }
+        } else {
+            let mut j = 0;
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                sum_r = _mm_fmadd_ps(cx, s, sum_r);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                sum_g = _mm_fmadd_ps(cx, s, sum_g);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                sum_b = _mm_fmadd_ps(cx, s, sum_b);
+
+                in_idx += 3;
+                cx_idx += 4;
+                j += 1;
+            }
+        }
+
+        // Vertical accumulation: tap-major layout (4 floats per channel),
+        // distributing this output pixel's lane-0 sample across 4 ring-buffer
+        // taps via cy. Matches sse2::scale_down_rgb_nogamma so the existing
+        // yscale_out_g consumer reads the same memory.
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx));
+        let sample = _mm_shuffle_ps(sum_r, sum_r, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_fmadd_ps(cy, sample, sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx), sy);
+
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 4));
+        let sample = _mm_shuffle_ps(sum_g, sum_g, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_fmadd_ps(cy, sample, sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 4), sy);
+
+        let mut sy = _mm_loadu_ps(sy_ptr.add(sy_idx + 8));
+        let sample = _mm_shuffle_ps(sum_b, sum_b, mm_shuffle(0, 0, 0, 0));
+        sy = _mm_fmadd_ps(cy, sample, sy);
+        _mm_storeu_ps(sy_ptr.add(sy_idx + 8), sy);
+
+        sy_idx += 12;
+
+        // Shift the 4-output-pixel pipeline left: lane 0 (just consumed)
+        // drops off, lanes 1..3 become 0..2, lane 3 zero-fills.
+        sum_r = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_r), 4));
+        sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
+        sum_b = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_b), 4));
+    }
+}
+
 /// AVX2 downscale for RGBX_NOGAMMA: FMA x-filtering + 256-bit y-accumulation + prefetch.
 #[target_feature(enable = "avx2,fma")]
 pub unsafe fn scale_down_rgbx_nogamma(
