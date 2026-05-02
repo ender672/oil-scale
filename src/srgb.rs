@@ -1,18 +1,22 @@
 use std::sync::OnceLock;
 
-const L2S_ALL_LEN: usize = 32768;
+const L2S_LEN: usize = 32768;
 
 /// Precomputed lookup tables for sRGB ↔ linear conversions.
+///
+/// The linear-to-sRGB LUT covers the full [0, 1] linear range; callers must
+/// clamp their input before indexing. Catmull-Rom's negative lobe can drive
+/// intermediates outside [0, 1] in 2-D, and RGBA/ARGB unpremul (R_pre / alpha
+/// as alpha approaches 0) can produce arbitrarily large indices, so every
+/// gamma-aware output path clamps before the lookup.
 pub struct SrgbTables {
     /// sRGB byte -> linear float (gamma decompression)
     pub s2l: [f32; 256],
     /// byte -> float identity mapping (no gamma, for greyscale/CMYK)
     pub i2f: [f32; 256],
-    /// linear-to-sRGB full table (includes padding for out-of-range values)
-    l2s_all: [u8; L2S_ALL_LEN],
-    /// Offset into l2s_all where the usable mapping begins
-    l2s_offset: usize,
-    /// Length of the usable mapping region
+    /// linear-to-sRGB table; full [0, 1] mapping, no padding.
+    l2s: [u8; L2S_LEN],
+    /// Length of the l2s mapping (always L2S_LEN).
     pub l2s_len: usize,
 }
 
@@ -21,9 +25,8 @@ impl SrgbTables {
         let mut tables = SrgbTables {
             s2l: [0.0; 256],
             i2f: [0.0; 256],
-            l2s_all: [0; L2S_ALL_LEN],
-            l2s_offset: 0,
-            l2s_len: 0,
+            l2s: [0; L2S_LEN],
+            l2s_len: L2S_LEN,
         };
 
         // build s2l: sRGB byte -> linear float
@@ -42,44 +45,41 @@ impl SrgbTables {
             tables.i2f[i as usize] = i as f32 / 255.0;
         }
 
-        // build l2s: linear float -> sRGB byte
-        let padding = L2S_ALL_LEN * 17 / 98;
-        tables.l2s_len = L2S_ALL_LEN - 2 * padding;
-        tables.l2s_offset = padding;
-
-        for i in 0..tables.l2s_len {
-            let srgb_f = (i as f64 + 0.5) / (tables.l2s_len - 1) as f64;
+        // build l2s: linear float -> sRGB byte (full [0, 1] range)
+        for i in 0..L2S_LEN {
+            let srgb_f = (i as f64 + 0.5) / (L2S_LEN - 1) as f64;
             let val = if srgb_f <= 0.00313 {
                 srgb_f * 12.92
             } else {
                 1.055 * srgb_f.powf(1.0 / 2.4) - 0.055
             };
-            tables.l2s_all[padding + i] = (val * 255.0).round() as u8;
-        }
-
-        // Padding above: clamp to 255
-        for i in 0..padding {
-            tables.l2s_all[padding + tables.l2s_len + i] = 255;
+            tables.l2s[i] = (val * 255.0).round() as u8;
         }
 
         tables
     }
 
-    /// Map a linear RGB float to an sRGB byte using the lookup table.
+    /// Map a linear RGB float to an sRGB byte. Clamps the input to [0, 1]
+    /// internally so callers don't have to.
     #[inline]
     pub fn linear_to_srgb(&self, val: f32) -> u8 {
-        let idx = (val * (self.l2s_len - 1) as f32) as i32;
-        self.l2s_all[(self.l2s_offset as i32 + idx) as usize]
+        let v = if val < 0.0 {
+            0.0
+        } else if val > 1.0 {
+            1.0
+        } else {
+            val
+        };
+        let idx = (v * (L2S_LEN - 1) as f32) as usize;
+        self.l2s[idx]
     }
 
-    /// Return a pointer into l2s_all at the l2s_offset position.
-    /// This mirrors the C `l2s_map` pointer: indices can be negative (for
-    /// Catmull-Rom overshoot) and positive up to l2s_len, relying on padding
-    /// in both directions.
+    /// Pointer to the start of the l2s LUT. SIMD callers index this directly,
+    /// and must clamp their float vector to [0, 1] before the cvtps-to-int.
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     #[inline]
     pub fn l2s_ptr(&self) -> *const u8 {
-        unsafe { self.l2s_all.as_ptr().add(self.l2s_offset) }
+        self.l2s.as_ptr()
     }
 }
 

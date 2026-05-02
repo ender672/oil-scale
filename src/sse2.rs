@@ -92,10 +92,15 @@ pub unsafe fn yscale_up_rgb(
     let lut = tables.l2s_ptr();
     let scale_f = (tables.l2s_len - 1) as f32;
 
+    // coeffs are pre-scaled, so the post-blend value is in [0, scale_f]
+    // when in-range. Clamp to that range (equivalent to clamping the
+    // unscaled linear value to [0, 1]) before cvtps.
     let c0 = _mm_set1_ps(coeffs[0] * scale_f);
     let c1 = _mm_set1_ps(coeffs[1] * scale_f);
     let c2 = _mm_set1_ps(coeffs[2] * scale_f);
     let c3 = _mm_set1_ps(coeffs[3] * scale_f);
+    let zero = _mm_setzero_ps();
+    let max_idx = _mm_set1_ps(scale_f);
 
     let mut i = 0;
     let mut idx_buf: [i32; 12] = [0i32; 12];
@@ -131,6 +136,9 @@ pub unsafe fn yscale_up_rgb(
                     c2, _mm_loadu_ps(l2.add(i + 8))),
                     _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i + 8))))));
 
+        let sum0 = _mm_min_ps(_mm_max_ps(sum0, zero), max_idx);
+        let sum1 = _mm_min_ps(_mm_max_ps(sum1, zero), max_idx);
+        let sum2 = _mm_min_ps(_mm_max_ps(sum2, zero), max_idx);
         _mm_storeu_si128(idx_ptr, _mm_cvttps_epi32(sum0));
         _mm_storeu_si128(idx_ptr.add(1), _mm_cvttps_epi32(sum1));
         _mm_storeu_si128(idx_ptr.add(2), _mm_cvttps_epi32(sum2));
@@ -160,6 +168,7 @@ pub unsafe fn yscale_up_rgb(
                 _mm_add_ps(_mm_mul_ps(
                     c2, _mm_loadu_ps(l2.add(i))),
                     _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i))))));
+        let sum = _mm_min_ps(_mm_max_ps(sum, zero), max_idx);
         _mm_storeu_si128(idx_ptr, _mm_cvttps_epi32(sum));
         *out_ptr.add(i)     = *lut.offset(idx_buf[0] as isize);
         *out_ptr.add(i + 1) = *lut.offset(idx_buf[1] as isize);
@@ -170,10 +179,12 @@ pub unsafe fn yscale_up_rgb(
 
     // Scalar tail
     while i < len {
-        let val = *coeffs.get_unchecked(0) * scale_f * *l0.add(i)
+        let mut val = *coeffs.get_unchecked(0) * scale_f * *l0.add(i)
             + *coeffs.get_unchecked(1) * scale_f * *l1.add(i)
             + *coeffs.get_unchecked(2) * scale_f * *l2.add(i)
             + *coeffs.get_unchecked(3) * scale_f * *l3.add(i);
+        if val < 0.0 { val = 0.0; }
+        else if val > scale_f { val = scale_f; }
         *out_ptr.add(i) = *lut.offset(val as isize);
         i += 1;
     }
@@ -398,6 +409,8 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     let tables = srgb::tables();
     let lut = tables.l2s_ptr();
     let scale = _mm_set1_ps((tables.l2s_len - 1) as f32);
+    let zero = _mm_setzero_ps();
+    let one = _mm_set1_ps(1.0);
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
@@ -421,6 +434,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
         let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
         let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        let vals = _mm_min_ps(_mm_max_ps(vals, zero), one);
         let idx = _mm_cvttps_epi32(_mm_mul_ps(vals, scale));
 
         // Second batch of 4
@@ -436,6 +450,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let ab2 = _mm_shuffle_ps(g0, g1, mm_shuffle(0, 0, 0, 0));
         let cd2 = _mm_shuffle_ps(g2, g3, mm_shuffle(0, 0, 0, 0));
         let vals2 = _mm_shuffle_ps(ab2, cd2, mm_shuffle(2, 0, 2, 0));
+        let vals2 = _mm_min_ps(_mm_max_ps(vals2, zero), one);
         let idx2 = _mm_cvttps_epi32(_mm_mul_ps(vals2, scale));
 
         // Interleave LUT lookups from both batches for ILP
@@ -477,6 +492,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
         let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
         let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+        let vals = _mm_min_ps(_mm_max_ps(vals, zero), one);
 
         let idx = _mm_cvttps_epi32(_mm_mul_ps(vals, scale));
 
@@ -496,7 +512,9 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
 
     // Scalar tail
     while i < sl_len {
-        let val = *s_ptr.add(s_idx);
+        let mut val = *s_ptr.add(s_idx);
+        if val < 0.0 { val = 0.0; }
+        else if val > 1.0 { val = 1.0; }
         *out_ptr.add(i) = *lut.offset((val * (tables.l2s_len - 1) as f32) as isize);
         // shift_left
         *s_ptr.add(s_idx) = *s_ptr.add(s_idx + 1);
@@ -1413,10 +1431,14 @@ pub unsafe fn yscale_up_rgbx(
     let lut = tables.l2s_ptr();
     let scale_f = (tables.l2s_len - 1) as f32;
 
+    // Pre-scaled coeffs: clamp to [0, scale_f] is equivalent to clamping
+    // the unscaled linear value to [0, 1] before lookup.
     let c0 = _mm_set1_ps(coeffs[0] * scale_f);
     let c1 = _mm_set1_ps(coeffs[1] * scale_f);
     let c2 = _mm_set1_ps(coeffs[2] * scale_f);
     let c3 = _mm_set1_ps(coeffs[3] * scale_f);
+    let zero = _mm_setzero_ps();
+    let max_idx = _mm_set1_ps(scale_f);
 
     let l0 = lines[0].as_ptr();
     let l1 = lines[1].as_ptr();
@@ -1452,6 +1474,9 @@ pub unsafe fn yscale_up_rgbx(
                     c2, _mm_loadu_ps(l2.add(i + 8))),
                     _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i + 8))))));
 
+        let sum0 = _mm_min_ps(_mm_max_ps(sum0, zero), max_idx);
+        let sum1 = _mm_min_ps(_mm_max_ps(sum1, zero), max_idx);
+        let sum2 = _mm_min_ps(_mm_max_ps(sum2, zero), max_idx);
         _mm_storeu_si128(idx_ptr, _mm_cvttps_epi32(sum0));
         _mm_storeu_si128(idx_ptr.add(1), _mm_cvttps_epi32(sum1));
         _mm_storeu_si128(idx_ptr.add(2), _mm_cvttps_epi32(sum2));
@@ -1481,6 +1506,7 @@ pub unsafe fn yscale_up_rgbx(
                 _mm_add_ps(_mm_mul_ps(
                     c2, _mm_loadu_ps(l2.add(i))),
                     _mm_mul_ps(c3, _mm_loadu_ps(l3.add(i))))));
+        let sum = _mm_min_ps(_mm_max_ps(sum, zero), max_idx);
         _mm_storeu_si128(idx_ptr, _mm_cvttps_epi32(sum));
         *out_ptr.add(i)     = *lut.offset(idx_buf[0] as isize);
         *out_ptr.add(i + 1) = *lut.offset(idx_buf[1] as isize);

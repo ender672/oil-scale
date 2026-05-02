@@ -599,6 +599,89 @@ fn scale_catrom_extremes() {
     test_scale_catrom_extremes(ColorSpace::ARGB);
 }
 
+// Synthetic pattern that maximizes interpolator overshoot on upscale.
+//
+// 2x2 blocks of alternating 255 and 0. On an integer upscale, output
+// positions at block centers place the two same-colored source samples
+// under Catmull-Rom's positive lobe (|x|<1, weight ~0.5625 each) and the
+// two opposite-colored samples under the negative lobe (|x|>1, weight
+// ~-0.0625 each). A single 1-D pass produces ~1.125 at a +block center
+// and ~-0.125 at a -block center. Compounding both axes pushes that to
+// ~1.266 / -0.141 — well outside [0,1], so every path exercises clamping
+// before linear-to-sRGB on out-of-gamut values.
+fn test_scale_negative_lobe_pattern(in_dim: u32, out_dim: u32, cs: ColorSpace) {
+    let cmp = cs.components();
+    let mut input: Vec<Vec<u8>> = vec![vec![0u8; in_dim as usize * cmp]; in_dim as usize];
+    for (i, row) in input.iter_mut().enumerate().take(in_dim as usize) {
+        for j in 0..in_dim as usize {
+            let val: u8 = if (((j / 2) ^ (i / 2)) & 1) != 0 { 0 } else { 255 };
+            for k in 0..cmp {
+                row[j * cmp + k] = val;
+            }
+        }
+    }
+    test_scale(in_dim, in_dim, &input, out_dim, out_dim, cs);
+}
+
+#[test]
+fn scale_negative_lobe_all() {
+    let dims: &[(u32, u32)] = &[
+        (16, 32), // 2x: output centers hit lobe extremes exactly
+        (16, 64), // 4x: multiple output samples per input pixel
+        (16, 33), // non-integer upscale
+    ];
+    let spaces = [
+        ColorSpace::G,
+        ColorSpace::GA,
+        ColorSpace::RGB,
+        ColorSpace::RGBA,
+        ColorSpace::ARGB,
+        ColorSpace::CMYK,
+        ColorSpace::RGBX,
+        ColorSpace::RgbNoGamma,
+        ColorSpace::RgbaNoGamma,
+        ColorSpace::RgbxNoGamma,
+    ];
+    for &(a, b) in dims {
+        for &cs in &spaces {
+            test_scale_negative_lobe_pattern(a, b, cs);
+        }
+    }
+}
+
+// Worst case for premultiplied-alpha unpremul: Catmull-Rom's negative
+// lobe can break the R_pre <= alpha invariant during interpolation, so
+// post-divide R_pre / clampf(alpha) can reach far outside any pre-divide
+// bound. Pattern [A,B,C,A]: A = opaque black, B,C = near-transparent
+// white (alpha=28/255, 29/255; R_pre ~ alpha). At src_pos=1.5 the
+// negative-lobe taps hit A (drag alpha down by ~2*0.0625), positive-lobe
+// taps hit B,C (contribute alpha*0.5625 to both sums). alpha ~ 0.0007
+// (the divide path fires); R_pre ~ 0.126; R_final ~ 170. Widening LUT
+// padding cannot bound this — only post-divide clamping.
+#[test]
+fn scale_alpha_unpremul_overshoot() {
+    let alphas: [u8; 4] = [255, 28, 29, 255];
+    let rgbs: [u8; 4] = [0, 255, 255, 0];
+    for &cs in &[ColorSpace::RGBA, ColorSpace::ARGB] {
+        let cmp = cs.components();
+        let (a_off, rgb_off) = match cs {
+            ColorSpace::ARGB => (0usize, 1usize),
+            _ => (3usize, 0usize),
+        };
+        let mut input: Vec<Vec<u8>> = vec![vec![0u8; 4 * cmp]; 4];
+        for row in input.iter_mut().take(4) {
+            for j in 0..4 {
+                let px = &mut row[j * cmp..(j + 1) * cmp];
+                px[a_off] = alphas[j];
+                px[rgb_off] = rgbs[j];
+                px[rgb_off + 1] = rgbs[j];
+                px[rgb_off + 2] = rgbs[j];
+            }
+        }
+        test_scale(4, 4, &input, 7, 7, cs);
+    }
+}
+
 // --- discard_output_scanline tests ---
 
 fn do_oil_scale_with_discard(

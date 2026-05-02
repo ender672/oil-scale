@@ -81,10 +81,15 @@ pub unsafe fn yscale_up_rgb(
     let lut = tables.l2s_ptr();
     let scale_f = (tables.l2s_len - 1) as f32;
 
+    // Pre-scaled coeffs: clamping the post-blend value to [0, scale_f] is
+    // equivalent to clamping the unscaled linear value to [0, 1] before
+    // lookup. This bounds Catmull-Rom overshoot inside the LUT.
     let c0 = vdupq_n_f32(coeffs[0] * scale_f);
     let c1 = vdupq_n_f32(coeffs[1] * scale_f);
     let c2 = vdupq_n_f32(coeffs[2] * scale_f);
     let c3 = vdupq_n_f32(coeffs[3] * scale_f);
+    let zero = vdupq_n_f32(0.0);
+    let max_idx = vdupq_n_f32(scale_f);
 
     let mut i = 0;
     let out_ptr = out.as_mut_ptr();
@@ -112,6 +117,9 @@ pub unsafe fn yscale_up_rgb(
             c1, vld1q_f32(l1.add(i + 8))),
             c0, vld1q_f32(l0.add(i + 8)));
 
+        let sum0 = vminq_f32(vmaxq_f32(sum0, zero), max_idx);
+        let sum1 = vminq_f32(vmaxq_f32(sum1, zero), max_idx);
+        let sum2 = vminq_f32(vmaxq_f32(sum2, zero), max_idx);
         let idx0 = vcvtq_s32_f32(sum0);
         let idx1 = vcvtq_s32_f32(sum1);
         let idx2 = vcvtq_s32_f32(sum2);
@@ -139,6 +147,7 @@ pub unsafe fn yscale_up_rgb(
             c2, vld1q_f32(l2.add(i))),
             c1, vld1q_f32(l1.add(i))),
             c0, vld1q_f32(l0.add(i)));
+        let sum = vminq_f32(vmaxq_f32(sum, zero), max_idx);
         let idx = vcvtq_s32_f32(sum);
         *out_ptr.add(i)     = *lut.offset(vgetq_lane_s32::<0>(idx) as isize);
         *out_ptr.add(i + 1) = *lut.offset(vgetq_lane_s32::<1>(idx) as isize);
@@ -149,10 +158,12 @@ pub unsafe fn yscale_up_rgb(
 
     // Scalar tail
     while i < len {
-        let val = *coeffs.get_unchecked(0) * scale_f * *l0.add(i)
+        let mut val = *coeffs.get_unchecked(0) * scale_f * *l0.add(i)
             + *coeffs.get_unchecked(1) * scale_f * *l1.add(i)
             + *coeffs.get_unchecked(2) * scale_f * *l2.add(i)
             + *coeffs.get_unchecked(3) * scale_f * *l3.add(i);
+        if val < 0.0 { val = 0.0; }
+        else if val > scale_f { val = scale_f; }
         *out_ptr.add(i) = *lut.offset(val as isize);
         i += 1;
     }
@@ -375,6 +386,8 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
     let tables = srgb::tables();
     let lut = tables.l2s_ptr();
     let scale = vdupq_n_f32((tables.l2s_len - 1) as f32);
+    let lut_zero = vdupq_n_f32(0.0);
+    let one = vdupq_n_f32(1.0);
 
     let s_ptr = sums.as_mut_ptr();
     let out_ptr = out.as_mut_ptr();
@@ -392,6 +405,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let f3 = vld1q_f32(sp.add(12));
 
         let vals = gather_lane0(f0, f1, f2, f3);
+        let vals = vminq_f32(vmaxq_f32(vals, lut_zero), one);
         let idx = vcvtq_s32_f32(vmulq_f32(vals, scale));
 
         // Second batch of 4
@@ -401,6 +415,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let g3 = vld1q_f32(sp.add(28));
 
         let vals2 = gather_lane0(g0, g1, g2, g3);
+        let vals2 = vminq_f32(vmaxq_f32(vals2, lut_zero), one);
         let idx2 = vcvtq_s32_f32(vmulq_f32(vals2, scale));
 
         // Interleave LUT lookups from both batches for ILP
@@ -437,6 +452,7 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
         let f3 = vld1q_f32(sp.add(12));
 
         let vals = gather_lane0(f0, f1, f2, f3);
+        let vals = vminq_f32(vmaxq_f32(vals, lut_zero), one);
         let idx = vcvtq_s32_f32(vmulq_f32(vals, scale));
 
         *out_ptr.add(i)     = *lut.offset(vgetq_lane_s32::<0>(idx) as isize);
@@ -456,7 +472,9 @@ pub unsafe fn yscale_out_rgb(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
 
     // Scalar tail
     while i < sl_len {
-        let val = *s_ptr.add(s_idx);
+        let mut val = *s_ptr.add(s_idx);
+        if val < 0.0 { val = 0.0; }
+        else if val > 1.0 { val = 1.0; }
         *out_ptr.add(i) = *lut.offset((val * (tables.l2s_len - 1) as f32) as isize);
         // shift_left
         *s_ptr.add(s_idx) = *s_ptr.add(s_idx + 1);
@@ -1345,10 +1363,14 @@ pub unsafe fn yscale_up_rgbx(
     let lut = tables.l2s_ptr();
     let scale_f = (tables.l2s_len - 1) as f32;
 
+    // Pre-scaled coeffs: clamp to [0, scale_f] is equivalent to clamping
+    // the unscaled linear value to [0, 1] before lookup.
     let c0 = vdupq_n_f32(coeffs[0] * scale_f);
     let c1 = vdupq_n_f32(coeffs[1] * scale_f);
     let c2 = vdupq_n_f32(coeffs[2] * scale_f);
     let c3 = vdupq_n_f32(coeffs[3] * scale_f);
+    let zero = vdupq_n_f32(0.0);
+    let max_idx = vdupq_n_f32(scale_f);
 
     let l0 = lines[0].as_ptr();
     let l1 = lines[1].as_ptr();
@@ -1376,6 +1398,9 @@ pub unsafe fn yscale_up_rgbx(
             c1, vld1q_f32(l1.add(i + 8))),
             c0, vld1q_f32(l0.add(i + 8)));
 
+        let sum0 = vminq_f32(vmaxq_f32(sum0, zero), max_idx);
+        let sum1 = vminq_f32(vmaxq_f32(sum1, zero), max_idx);
+        let sum2 = vminq_f32(vmaxq_f32(sum2, zero), max_idx);
         let idx0 = vcvtq_s32_f32(sum0);
         let idx1 = vcvtq_s32_f32(sum1);
         let idx2 = vcvtq_s32_f32(sum2);
@@ -1403,6 +1428,7 @@ pub unsafe fn yscale_up_rgbx(
             c2, vld1q_f32(l2.add(i))),
             c1, vld1q_f32(l1.add(i))),
             c0, vld1q_f32(l0.add(i)));
+        let sum = vminq_f32(vmaxq_f32(sum, zero), max_idx);
         let idx = vcvtq_s32_f32(sum);
         *out_ptr.add(i)     = *lut.offset(vgetq_lane_s32::<0>(idx) as isize);
         *out_ptr.add(i + 1) = *lut.offset(vgetq_lane_s32::<1>(idx) as isize);
