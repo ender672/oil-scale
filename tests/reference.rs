@@ -484,6 +484,39 @@ fn scale_2_to_1() {
     test_scale_all_permutations(&mut rng, 2, 1);
 }
 
+/// Sweep near-identity up/down scales (N <-> N+/-1) across sizes, colorspaces,
+/// and seeds. Prior worst-case errors all came from 99<->100; this targets that
+/// regime to exercise float accumulation precision in the x/y scale paths.
+#[test]
+fn scale_near_identity() {
+    let sizes: &[u32] = &[7, 16, 33, 50, 99, 100];
+    let spaces: &[ColorSpace] = &[
+        ColorSpace::G,
+        ColorSpace::GA,
+        ColorSpace::RGB,
+        ColorSpace::RGBA,
+        ColorSpace::ARGB,
+        ColorSpace::CMYK,
+        ColorSpace::RGBX,
+        ColorSpace::RgbNoGamma,
+        ColorSpace::RgbaNoGamma,
+        ColorSpace::RgbxNoGamma,
+    ];
+    let seeds: &[u64] = &[1531289551, 0xdeadbeef];
+
+    for &seed in seeds {
+        let mut rng = StdRng::seed_from_u64(seed);
+        for &n in sizes {
+            for &cs in spaces {
+                test_scale_square_rand(&mut rng, n, n + 1, cs);
+                if n > 1 {
+                    test_scale_square_rand(&mut rng, n, n - 1, cs);
+                }
+            }
+        }
+    }
+}
+
 fn do_oil_scale_with_reset(
     input: &[Vec<u8>],
     in_width: u32,
