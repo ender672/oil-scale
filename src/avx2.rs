@@ -412,6 +412,7 @@ pub unsafe fn scale_down_rgb_nogamma(
 
 /// AVX2 downscale for RGBX_NOGAMMA: FMA x-filtering + 256-bit y-accumulation + prefetch.
 #[target_feature(enable = "avx2,fma")]
+#[inline]
 pub unsafe fn scale_down_rgbx_nogamma(
     input: &[u8],
     sums_y: &mut [f32],

@@ -1925,6 +1925,7 @@ impl OilScale {
         }
     }
 
+    #[inline(always)]
     unsafe fn down_scale_in_avx2_prefer(&mut self, input: &[u8]) {
         let coeffs_y_start = self.in_pos as usize * 4;
         let coeffs_y = [
