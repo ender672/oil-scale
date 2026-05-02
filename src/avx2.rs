@@ -262,7 +262,7 @@ pub unsafe fn scale_down_g_heavy(
     }
 }
 
-/// AVX2 downscale for RGB_NOGAMMA (3-byte stride): horizontal x-filtering with
+/// AVX2 downscale for RGB (3-byte stride): horizontal x-filtering with
 /// 256-bit-widened pair-tap FMA loop + 128-bit y-accumulation.
 ///
 /// Mirrors C's `oil_scale_down_rgb_avx2` (post-a0c05fc): the pair-tap inner
@@ -271,17 +271,21 @@ pub unsafe fn scale_down_g_heavy(
 /// Carry-over state stays 4-wide; the running 128-bit `sum_*` is sunk into
 /// the low lane at pixel start and folded back at pixel end. The trail
 /// (border-buf parity tail) and small-border path keep 128-bit FMAs.
+///
+/// `lut` selects the input gamma path: `s2l_map` for sRGB-linearized
+/// `OIL_CS_RGB`, or `i2f_map` for `OIL_CS_RGB_NOGAMMA`. Mirrors the C
+/// dispatcher (oil_resample_avx2.c:2042/2067), which calls the same
+/// function with different lookup tables.
 #[target_feature(enable = "avx2,fma")]
-pub unsafe fn scale_down_rgb_nogamma(
+pub unsafe fn scale_down_rgb(
     input: &[u8],
     sums_y: &mut [f32],
     out_width: u32,
     coeffs_x: &[f32],
     border_buf: &[i32],
     coeffs_y: &[f32],
+    lut: *const f32,
 ) {
-    let tables = srgb::tables();
-    let i2f = tables.i2f.as_ptr();
     let cy = _mm_loadu_ps(coeffs_y.as_ptr());
 
     let mut sum_r = _mm_setzero_ps();
@@ -314,16 +318,16 @@ pub unsafe fn scale_down_rgb_nogamma(
             while j + 1 < border {
                 let cx = _mm256_loadu_ps(cx_ptr.add(cx_idx));
                 let sr = _mm256_set_m128(
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 3) as usize)),
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 3) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize)),
                 );
                 let sg = _mm256_set_m128(
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 4) as usize)),
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 4) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize)),
                 );
                 let sb = _mm256_set_m128(
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 5) as usize)),
-                    _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 5) as usize)),
+                    _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize)),
                 );
 
                 sum_r256 = _mm256_fmadd_ps(cx, sr, sum_r256);
@@ -352,11 +356,11 @@ pub unsafe fn scale_down_rgb_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize));
                 sum_r = _mm_fmadd_ps(cx, s, sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize));
                 sum_g = _mm_fmadd_ps(cx, s, sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize));
                 sum_b = _mm_fmadd_ps(cx, s, sum_b);
 
                 in_idx += 3;
@@ -368,11 +372,11 @@ pub unsafe fn scale_down_rgb_nogamma(
             while j < border {
                 let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
 
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx) as usize));
                 sum_r = _mm_fmadd_ps(cx, s, sum_r);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 1) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 1) as usize));
                 sum_g = _mm_fmadd_ps(cx, s, sum_g);
-                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize));
+                let s = _mm_set1_ps(*lut.add(*in_ptr.add(in_idx + 2) as usize));
                 sum_b = _mm_fmadd_ps(cx, s, sum_b);
 
                 in_idx += 3;

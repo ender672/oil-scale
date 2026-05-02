@@ -1781,9 +1781,18 @@ impl OilScale {
         ];
 
         match self.cs {
-            ColorSpace::RGB => sse2::scale_down_rgb(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
-            ),
+            ColorSpace::RGB => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_rgb(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                        srgb::tables().s2l.as_ptr(),
+                    );
+                } else {
+                    sse2::scale_down_rgb(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                }
+            }
             ColorSpace::RGBA => sse2::scale_down_rgba(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
             ),
@@ -1818,8 +1827,9 @@ impl OilScale {
             ),
             ColorSpace::RgbNoGamma => {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-                    avx2::scale_down_rgb_nogamma(
+                    avx2::scale_down_rgb(
                         input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                        srgb::tables().i2f.as_ptr(),
                     );
                 } else {
                     sse2::scale_down_rgb_nogamma(
@@ -1936,8 +1946,9 @@ impl OilScale {
         ];
 
         match self.cs {
-            ColorSpace::RGB => sse2::scale_down_rgb(
+            ColorSpace::RGB => avx2::scale_down_rgb(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                srgb::tables().s2l.as_ptr(),
             ),
             ColorSpace::RGBA => sse2::scale_down_rgba(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
@@ -1965,8 +1976,9 @@ impl OilScale {
             ColorSpace::CMYK => sse2::scale_down_cmyk(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
-            ColorSpace::RgbNoGamma => avx2::scale_down_rgb_nogamma(
+            ColorSpace::RgbNoGamma => avx2::scale_down_rgb(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                srgb::tables().i2f.as_ptr(),
             ),
             ColorSpace::RgbaNoGamma => avx2::scale_down_rgba_nogamma(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y, self.sums_y_tap,
