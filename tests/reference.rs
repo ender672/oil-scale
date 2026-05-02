@@ -517,6 +517,73 @@ fn scale_near_identity() {
     }
 }
 
+/// Accuracy test: linear ramp preservation for G colorspace.
+///
+/// Catmull-Rom reproduces linear functions exactly in the kernel interior
+/// (the normalized coefficients satisfy sum(c_k * x_k) = center — the
+/// first-moment property). So a linear input ramp must resample to a linear
+/// ramp at output sample centers, independent of scale factor. Near edges the
+/// kernel is truncated and renormalized, which preserves the zeroth moment
+/// but breaks the first-moment property; those pixels are skipped.
+///
+/// This is a stronger check than the reference-comparison tests: the ground
+/// truth is algebraic, not another floating-point implementation. A bug
+/// shared by the fast impl and the long-double reference would pass
+/// reference-comparison but fail this test.
+fn test_g_linear_ramp(in_dim: u32, out_dim: u32) {
+    // in_row[i] = i must be an exact 8-bit ramp value.
+    assert!(in_dim <= 256);
+
+    let in_row: Vec<u8> = (0..in_dim).map(|i| i as u8).collect();
+    let mut out_row = vec![0u8; out_dim as usize];
+
+    // Downscale: radius = 2 * in/out source pixels. Upscale: radius = 2.
+    let radius = if in_dim <= out_dim {
+        2.0
+    } else {
+        2.0 * in_dim as f64 / out_dim as f64
+    };
+
+    let mut os = OilScale::new(in_dim, in_dim, out_dim, out_dim, ColorSpace::G).unwrap();
+    for _ in 0..out_dim {
+        while os.slots() > 0 {
+            os.push_scanline(&in_row).unwrap();
+        }
+        // Input is constant in y, so every output row is identical —
+        // we only need to inspect the last one.
+        os.read_scanline(&mut out_row).unwrap();
+    }
+
+    for out_pos in 0..out_dim as usize {
+        let src_pos = (out_pos as f64 + 0.5) * (in_dim as f64 / out_dim as f64) - 0.5;
+        if src_pos < radius || src_pos > (in_dim - 1) as f64 - radius {
+            continue;
+        }
+        let expected = src_pos.round() as i32;
+        let got = out_row[out_pos] as i32;
+        // Tolerance is 8-bit round-to-nearest only; no float slack.
+        assert!(
+            (got - expected).abs() <= 1,
+            "ramp {}->{} pos {}: expected {}, got {}",
+            in_dim,
+            out_dim,
+            out_pos,
+            expected,
+            got,
+        );
+    }
+}
+
+#[test]
+fn g_linear_ramp_all() {
+    test_g_linear_ramp(32, 128);   // 4x upscale
+    test_g_linear_ramp(128, 32);   // 4x downscale
+    test_g_linear_ramp(200, 50);   // 4x downscale, larger
+    test_g_linear_ramp(99, 100);   // near-identity upscale
+    test_g_linear_ramp(100, 99);   // near-identity downscale
+    test_g_linear_ramp(256, 17);   // ~15x downscale, wide kernel
+}
+
 fn do_oil_scale_with_reset(
     input: &[Vec<u8>],
     in_width: u32,
