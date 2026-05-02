@@ -7,6 +7,24 @@ const fn mm_shuffle(z: u32, y: u32, x: u32, w: u32) -> i32 {
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
 
+/// FMA two lane-0 broadcasts into 8 floats of `sums_y_out` (`s_lo`'s 4 taps
+/// followed by `s_hi`'s 4 taps), reusing the same 4-tap `coeffs_y` per half.
+///
+/// Builds the per-tap sample vector by combining `s_lo`/`s_hi` into one ymm
+/// first, then a single `vpermilps` to broadcast lane 0 of each 128-bit half.
+/// That sequence costs 1 vinsertf128 + 1 vpermilps (2 port-5 uops); the naive
+/// "broadcast each half, then insert" sequence costs 2 vpermilps + 1
+/// vinsertf128 (3 port-5 uops). Mirrors C's `oil_yacc_fma2_avx2` post-f3d96d0.
+#[target_feature(enable = "avx2,fma")]
+#[inline]
+unsafe fn yacc_fma2(sums_y_out: *mut f32, s_lo: __m128, s_hi: __m128, cy256: __m256) {
+    let s01 = _mm256_insertf128_ps(_mm256_castps128_ps256(s_lo), s_hi, 1);
+    let sample = _mm256_permute_ps(s01, 0);
+    let sy = _mm256_loadu_ps(sums_y_out);
+    let sy = _mm256_fmadd_ps(cy256, sample, sy);
+    _mm256_storeu_ps(sums_y_out, sy);
+}
+
 /// AVX2 downscale for G: horizontal x-filtering + 256-bit y-accumulation.
 /// Processes 2 output pixels at a time using 256-bit AVX2 for vertical accumulation.
 #[target_feature(enable = "avx2,fma")]
@@ -45,7 +63,7 @@ pub unsafe fn scale_down_g(
             in_idx += 1;
             cx_idx += 4;
         }
-        let result_lo = _mm_shuffle_ps(sum, sum, mm_shuffle(0, 0, 0, 0));
+        let s_lo = sum;
         sum = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum), 4));
 
         let border1 = *border_ptr.add(i as usize + 1);
@@ -56,13 +74,10 @@ pub unsafe fn scale_down_g(
             in_idx += 1;
             cx_idx += 4;
         }
-        let result_hi = _mm_shuffle_ps(sum, sum, mm_shuffle(0, 0, 0, 0));
+        let s_hi = sum;
         sum = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum), 4));
 
-        let mut sy256 = _mm256_loadu_ps(sy_ptr.add(sy_idx));
-        let sample256 = _mm256_set_m128(result_hi, result_lo);
-        sy256 = _mm256_add_ps(_mm256_mul_ps(cy256, sample256), sy256);
-        _mm256_storeu_ps(sy_ptr.add(sy_idx), sy256);
+        yacc_fma2(sy_ptr.add(sy_idx), s_lo, s_hi, cy256);
         sy_idx += 8;
         i += 2;
     }
@@ -153,7 +168,7 @@ pub unsafe fn scale_down_g_heavy(
             j += 1;
         }
         sum = _mm_add_ps(_mm_add_ps(sum, sum2), _mm_add_ps(sum3, sum4));
-        let result_lo = _mm_shuffle_ps(sum, sum, mm_shuffle(0, 0, 0, 0));
+        let s_lo = sum;
         sum = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum), 4));
 
         // Second output pixel
@@ -193,13 +208,10 @@ pub unsafe fn scale_down_g_heavy(
             j += 1;
         }
         sum = _mm_add_ps(_mm_add_ps(sum, sum2), _mm_add_ps(sum3, sum4));
-        let result_hi = _mm_shuffle_ps(sum, sum, mm_shuffle(0, 0, 0, 0));
+        let s_hi = sum;
         sum = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum), 4));
 
-        let mut sy256 = _mm256_loadu_ps(sy_ptr.add(sy_idx));
-        let sample256 = _mm256_set_m128(result_hi, result_lo);
-        sy256 = _mm256_add_ps(_mm256_mul_ps(cy256, sample256), sy256);
-        _mm256_storeu_ps(sy_ptr.add(sy_idx), sy256);
+        yacc_fma2(sy_ptr.add(sy_idx), s_lo, s_hi, cy256);
         sy_idx += 8;
         i += 2;
     }
