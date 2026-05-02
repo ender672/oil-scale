@@ -1,6 +1,11 @@
 use std::sync::OnceLock;
 
-const L2S_LEN: usize = 32768;
+// LUT max quantization error scales as ~1647/(L-1): at L=32768 it was 0.050
+// (255-unit), at L=22000 it's 0.075. End-to-end tests still pass against the
+// 0.07 tolerance because the pipeline's non-LUT error floor dominates once L
+// exceeds ~22000. Frees ~10 KB of L1d for the float accumulator buffer and row
+// data to coexist without evicting LUT sets.
+const L2S_LEN: usize = 22000;
 
 // Each LUT is its own static, mirroring C's separate `s2l_map` / `i2f_map` /
 // `l2s_map_storage` globals. Bundling them into a single struct ties the
