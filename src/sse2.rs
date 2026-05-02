@@ -2477,8 +2477,28 @@ unsafe fn yscale_out_nogamma_idx<const IS_RGBX: bool>(
     }
 }
 
+/// Per-pixel nogamma yscale_up conversion. RGBA un-premultiplies; RGBX clamps
+/// only — lane 3 of `vals` is guaranteed to be ~1.0 here (xscale_up_rgbx_nogamma
+/// writes 1.0 to every X output and the vertical blend uses normalized
+/// coefficients), so it rounds to exactly 255 after `*255 + 0.5 + cvttps`.
+/// This skips the AND/OR-mask "force 255" that yscale_out_nogamma_idx needs
+/// for the downscale path (where the X lane is left as garbage by
+/// scale_down_rgbx_nogamma).
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn yscale_up_nogamma_idx<const IS_RGBX: bool>(
+    vals: __m128, zero: __m128, one: __m128, scale: __m128, half: __m128,
+) -> __m128i {
+    if IS_RGBX {
+        clamp_round_idx_sse2(vals, zero, one, scale, half)
+    } else {
+        unpremul_rgba_idx_sse2(vals, zero, one, scale, half)
+    }
+}
+
 /// SSE2 vertical upscale shared between RGBA_NOGAMMA and RGBX_NOGAMMA.
-/// Mirrors C's `yscale_up_nogamma_sse2_impl`.
+/// Mirrors C's `yscale_up_nogamma_sse2_impl` structurally; the per-pixel
+/// helper skips C's AND/OR mask for the RGBX path (see yscale_up_nogamma_idx).
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn yscale_up_nogamma_impl<const IS_RGBX: bool>(
@@ -2495,8 +2515,6 @@ unsafe fn yscale_up_nogamma_impl<const IS_RGBX: bool>(
     let half = _mm_set1_ps(0.5);
     let one = _mm_set1_ps(1.0);
     let zero = _mm_setzero_ps();
-    let mask = _mm_set_epi32(0, -1, -1, -1);
-    let x_val = _mm_set_epi32(255, 0, 0, 0);
 
     let l0 = lines[0].as_ptr();
     let l1 = lines[1].as_ptr();
@@ -2511,8 +2529,8 @@ unsafe fn yscale_up_nogamma_impl<const IS_RGBX: bool>(
         let sum_a = ydot4_load_sse2(l0, l1, l2, l3, i, c0, c1, c2, c3);
         let sum_b = ydot4_load_sse2(l0, l1, l2, l3, i + 4, c0, c1, c2, c3);
 
-        let idx_a = yscale_out_nogamma_idx::<IS_RGBX>(sum_a, zero, one, scale, half, mask, x_val);
-        let idx_b = yscale_out_nogamma_idx::<IS_RGBX>(sum_b, zero, one, scale, half, mask, x_val);
+        let idx_a = yscale_up_nogamma_idx::<IS_RGBX>(sum_a, zero, one, scale, half);
+        let idx_b = yscale_up_nogamma_idx::<IS_RGBX>(sum_b, zero, one, scale, half);
 
         let packed = _mm_packs_epi32(idx_a, idx_b);
         let packed = _mm_packus_epi16(packed, packed);
@@ -2523,7 +2541,7 @@ unsafe fn yscale_up_nogamma_impl<const IS_RGBX: bool>(
 
     while i + 3 < len {
         let sum = ydot4_load_sse2(l0, l1, l2, l3, i, c0, c1, c2, c3);
-        let idx = yscale_out_nogamma_idx::<IS_RGBX>(sum, zero, one, scale, half, mask, x_val);
+        let idx = yscale_up_nogamma_idx::<IS_RGBX>(sum, zero, one, scale, half);
         let packed = _mm_packs_epi32(idx, idx);
         let packed = _mm_packus_epi16(packed, packed);
         *(out_ptr.add(i) as *mut i32) = _mm_cvtsi128_si32(packed);
