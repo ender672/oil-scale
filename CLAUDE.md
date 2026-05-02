@@ -24,8 +24,9 @@ cargo test --features force-scalar
 # Run imgscale CLI
 cargo run --release --bin imgscale -- WIDTH HEIGHT input.jpg [output.jpg]
 
-# Run benchmarks
-cargo run --release --bin benchmark -- image.png
+# Run benchmarks (single run with OILITERATIONS=100 is enough — the timings
+# stabilize quickly; don't burn cycles on multiple long passes)
+OILITERATIONS=100 cargo run --release --bin benchmark -- image.png
 ```
 
 ## Key design decisions
