@@ -3127,11 +3127,3 @@ unsafe fn lut_store3_sse2(out: *mut u8, idx: __m128i, lut: *const u8) {
     *out.add(2) = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as isize);
 }
 
-/// Write 4 bytes by indexing `lut` with all four i32 lanes of `idx`.
-/// Mirrors C's `oil_lut_store4_sse2`.
-#[inline]
-#[target_feature(enable = "sse2")]
-unsafe fn lut_store4_sse2(out: *mut u8, idx: __m128i, lut: *const u8) {
-    lut_store3_sse2(out, idx, lut);
-    *out.add(3) = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 12)) as isize);
-}
