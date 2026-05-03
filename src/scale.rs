@@ -2058,7 +2058,7 @@ impl OilScale {
             ColorSpace::RGBA => avx2::yscale_out_rgba(&mut self.sums_y, self.out_width, output, tap),
             ColorSpace::ARGB => avx2::yscale_out_argb(&mut self.sums_y, self.out_width, output, tap),
             ColorSpace::RGBX => avx2::yscale_out_rgbx(&mut self.sums_y, self.out_width, output, tap),
-            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => sse2::yscale_out_g(&mut self.sums_y, sl_len, output),
+            ColorSpace::G | ColorSpace::CMYK | ColorSpace::RgbNoGamma => avx2::yscale_out_g(&mut self.sums_y, sl_len, output),
             ColorSpace::GA => sse2::yscale_out_ga(&mut self.sums_y, self.out_width, output),
             ColorSpace::RgbaNoGamma => avx2::yscale_out_rgba_nogamma(&mut self.sums_y, self.out_width, output, tap),
             ColorSpace::RgbxNoGamma => avx2::yscale_out_rgbx_nogamma(&mut self.sums_y, self.out_width, output, tap),

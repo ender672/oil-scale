@@ -37,6 +37,48 @@ unsafe fn yacc_fma1(sums_y_out: *mut f32, sum: __m128, coeffs_y: __m128) {
     _mm_storeu_ps(sums_y_out, sy);
 }
 
+/// Shift `v` left by one float lane, zero-filling the top lane.
+/// Mirrors C's `oil_shift_f_left_avx2`.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn shift_f_left(v: __m128) -> __m128 {
+    _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(v), 4))
+}
+
+/// Consume one output pixel across 4 stride-4 channel ring-buffer slots:
+/// gather lane 0 from each of `sums[0..3]`, `sums[4..7]`, `sums[8..11]`,
+/// `sums[12..15]` into a packed vector, then shift each slot left to discard
+/// the consumed tap. Mirrors C's `oil_consume_ch0_x4_avx2`.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn consume_ch0_x4(sums: *mut f32) -> __m128 {
+    let f0 = _mm_load_ps(sums);
+    let f1 = _mm_load_ps(sums.add(4));
+    let f2 = _mm_load_ps(sums.add(8));
+    let f3 = _mm_load_ps(sums.add(12));
+
+    let ab = _mm_shuffle_ps(f0, f1, mm_shuffle(0, 0, 0, 0));
+    let cd = _mm_shuffle_ps(f2, f3, mm_shuffle(0, 0, 0, 0));
+    let vals = _mm_shuffle_ps(ab, cd, mm_shuffle(2, 0, 2, 0));
+
+    _mm_store_ps(sums, shift_f_left(f0));
+    _mm_store_ps(sums.add(4), shift_f_left(f1));
+    _mm_store_ps(sums.add(8), shift_f_left(f2));
+    _mm_store_ps(sums.add(12), shift_f_left(f3));
+
+    vals
+}
+
+/// Clamp `v` to `[0,1]`, multiply by `scale`, round to nearest, truncate to
+/// int32. Produces the byte-range index used by sRGB byte packing and LUTs.
+/// Mirrors C's `oil_clamp_round_idx_avx2`.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn clamp_round_idx(v: __m128, zero: __m128, one: __m128, scale: __m128, half: __m128) -> __m128i {
+    let v = _mm_min_ps(_mm_max_ps(v, zero), one);
+    _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(v, scale), half))
+}
+
 /// AVX2 downscale for G: horizontal x-filtering + 256-bit y-accumulation.
 /// Processes 2 output pixels at a time using 256-bit AVX2 for vertical accumulation.
 #[target_feature(enable = "avx2,fma")]
@@ -1110,5 +1152,61 @@ pub unsafe fn yscale_out_rgbx(sums: &mut [f32], width: u32, out: &mut [u8], tap:
 
         s_idx += 16;
         o_idx += 4;
+    }
+}
+
+/// AVX2 ring-buffer output for nonlinear single-channel paths
+/// (G, RGB_NOGAMMA, CMYK): clamp each lane-0 sample to `[0,1]`, scale to
+/// `[0,255]`, round, and pack to bytes. Mirrors C's
+/// `oil_yscale_out_nonlinear_avx2`.
+///
+/// The ring buffer is laid out channel-major with stride 4: each output
+/// channel owns 4 consecutive floats (one per tap phase). We consume lane 0
+/// of each slot and shift-left to slide the next tap into place.
+#[target_feature(enable = "avx2")]
+pub unsafe fn yscale_out_g(sums: &mut [f32], sl_len: usize, out: &mut [u8]) {
+    let scale = _mm_set1_ps(255.0);
+    let half = _mm_set1_ps(0.5);
+    let zero = _mm_setzero_ps();
+    let one = _mm_set1_ps(1.0);
+
+    let mut s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut i = 0usize;
+
+    while i + 7 < sl_len {
+        let vals = consume_ch0_x4(s_ptr);
+        let idx = clamp_round_idx(vals, zero, one, scale, half);
+
+        let vals2 = consume_ch0_x4(s_ptr.add(16));
+        let idx2 = clamp_round_idx(vals2, zero, one, scale, half);
+
+        let packed = _mm_packs_epi32(idx, idx2);
+        let packed = _mm_packus_epi16(packed, packed);
+        _mm_storel_epi64(out_ptr.add(i) as *mut __m128i, packed);
+
+        s_ptr = s_ptr.add(32);
+        i += 8;
+    }
+
+    while i + 3 < sl_len {
+        let vals = consume_ch0_x4(s_ptr);
+        let idx = clamp_round_idx(vals, zero, one, scale, half);
+
+        let packed = _mm_packs_epi32(idx, idx);
+        let packed = _mm_packus_epi16(packed, packed);
+        *(out_ptr.add(i) as *mut i32) = _mm_cvtsi128_si32(packed);
+
+        s_ptr = s_ptr.add(16);
+        i += 4;
+    }
+
+    while i < sl_len {
+        let v = (*s_ptr).clamp(0.0, 1.0);
+        *out_ptr.add(i) = (v * 255.0 + 0.5) as u8;
+        let shifted = shift_f_left(_mm_load_ps(s_ptr));
+        _mm_store_ps(s_ptr, shifted);
+        s_ptr = s_ptr.add(4);
+        i += 1;
     }
 }
