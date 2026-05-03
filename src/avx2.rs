@@ -1001,3 +1001,114 @@ pub unsafe fn yscale_out_rgba_nogamma(sums: &mut [f32], width: u32, out: &mut [u
         i += 1;
     }
 }
+
+/// Write 3 LUT-indexed bytes to `out[0..2]` using the low three int32 lanes
+/// of `idx`. Mirrors C's `oil_lut_store3_avx2`.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn lut_store3_avx2(out: *mut u8, idx: __m128i, lut: *const u8) {
+    *out         = *lut.offset(_mm_cvtsi128_si32(idx) as isize);
+    *out.add(1)  = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 4)) as isize);
+    *out.add(2)  = *lut.offset(_mm_cvtsi128_si32(_mm_srli_si128(idx, 8)) as isize);
+}
+
+/// AVX2 ring-buffer output shared between gamma RGBA and ARGB. `A_OFF` is the
+/// alpha-byte offset, `RGB_OFF` is the first RGB-byte offset.
+///
+/// Mirrors C's `oil_yscale_out_rgba_avx2`. RGB lanes are clamped, divided by
+/// the (clamped) alpha when nonzero, then converted to bytes through `l2s_map`.
+/// Alpha is converted directly via `(int)(alpha * 255 + 0.5)`. The consumed
+/// tap slot is zeroed, leaving the next tap to slide into place on the next
+/// scanline.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn yscale_out_alpha_impl<const A_OFF: usize, const RGB_OFF: usize>(
+    sums: &mut [f32], width: u32, out: &mut [u8], tap: usize,
+) {
+    let tables = srgb::tables();
+    let lut = tables.l2s_ptr();
+    let scale = _mm_set1_ps((tables.l2s_len - 1) as f32);
+    let one = _mm_set1_ps(1.0);
+    let zero = _mm_setzero_ps();
+    let z = _mm_setzero_si128();
+    let tap_off = tap * 4;
+
+    let s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        let vals = _mm_load_ps(s_ptr.add(s_idx + tap_off));
+
+        let alpha_v = _mm_shuffle_ps(vals, vals, mm_shuffle(3, 3, 3, 3));
+        let alpha_v = _mm_min_ps(_mm_max_ps(alpha_v, zero), one);
+        let alpha = _mm_cvtss_f32(alpha_v);
+
+        let mut rgb_vals = vals;
+        if alpha != 0.0 {
+            rgb_vals = _mm_mul_ps(rgb_vals, _mm_rcp_ps(alpha_v));
+        }
+        rgb_vals = _mm_min_ps(_mm_max_ps(rgb_vals, zero), one);
+        let idx = _mm_cvttps_epi32(_mm_mul_ps(rgb_vals, scale));
+
+        let p = out_ptr.add(o_idx);
+        lut_store3_avx2(p.add(RGB_OFF), idx, lut);
+        *p.add(A_OFF) = (alpha * 255.0 + 0.5) as u8;
+
+        _mm_store_si128(s_ptr.add(s_idx + tap_off) as *mut __m128i, z);
+
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
+
+/// AVX2 ring-buffer output for RGBA (gamma). Mirrors `oil_yscale_out_rgba_avx2`
+/// dispatched with `(a_off=3, rgb_off=0)`.
+#[target_feature(enable = "avx2")]
+pub unsafe fn yscale_out_rgba(sums: &mut [f32], width: u32, out: &mut [u8], tap: usize) {
+    yscale_out_alpha_impl::<3, 0>(sums, width, out, tap);
+}
+
+/// AVX2 ring-buffer output for ARGB (gamma). Mirrors `oil_yscale_out_rgba_avx2`
+/// dispatched with `(a_off=0, rgb_off=1)`.
+#[target_feature(enable = "avx2")]
+pub unsafe fn yscale_out_argb(sums: &mut [f32], width: u32, out: &mut [u8], tap: usize) {
+    yscale_out_alpha_impl::<0, 1>(sums, width, out, tap);
+}
+
+/// AVX2 ring-buffer output for RGBX (gamma). Mirrors `oil_yscale_out_rgbx_avx2`.
+///
+/// One pixel per iteration: clamp the loaded RGB lanes to `[0,1]`, look up the
+/// sRGB byte for each through `l2s_map`, force the X byte to 255, and zero the
+/// consumed tap slot.
+#[target_feature(enable = "avx2")]
+pub unsafe fn yscale_out_rgbx(sums: &mut [f32], width: u32, out: &mut [u8], tap: usize) {
+    let tables = srgb::tables();
+    let lut = tables.l2s_ptr();
+    let scale = _mm_set1_ps((tables.l2s_len - 1) as f32);
+    let one = _mm_set1_ps(1.0);
+    let zero = _mm_setzero_ps();
+    let z = _mm_setzero_si128();
+    let tap_off = tap * 4;
+
+    let s_ptr = sums.as_mut_ptr();
+    let out_ptr = out.as_mut_ptr();
+    let mut s_idx = 0usize;
+    let mut o_idx = 0usize;
+
+    for _ in 0..width {
+        let vals = _mm_load_ps(s_ptr.add(s_idx + tap_off));
+        let vals = _mm_min_ps(_mm_max_ps(vals, zero), one);
+        let idx = _mm_cvttps_epi32(_mm_mul_ps(vals, scale));
+
+        let p = out_ptr.add(o_idx);
+        lut_store3_avx2(p, idx, lut);
+        *p.add(3) = 255;
+
+        _mm_store_si128(s_ptr.add(s_idx + tap_off) as *mut __m128i, z);
+
+        s_idx += 16;
+        o_idx += 4;
+    }
+}
