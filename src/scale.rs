@@ -1846,9 +1846,17 @@ impl OilScale {
                     );
                 }
             }
-            ColorSpace::GA => sse2::scale_down_ga(
-                input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
-            ),
+            ColorSpace::GA => {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    avx2::scale_down_ga(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                } else {
+                    sse2::scale_down_ga(
+                        input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
+                    );
+                }
+            }
             ColorSpace::CMYK => sse2::scale_down_cmyk(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
@@ -2002,7 +2010,7 @@ impl OilScale {
                     );
                 }
             }
-            ColorSpace::GA => sse2::scale_down_ga(
+            ColorSpace::GA => avx2::scale_down_ga(
                 input, &mut self.sums_y, self.out_width, &self.coeffs_x, &self.borders_x, &coeffs_y,
             ),
             ColorSpace::CMYK => sse2::scale_down_cmyk(

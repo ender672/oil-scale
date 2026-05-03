@@ -274,6 +274,99 @@ pub unsafe fn scale_down_g_heavy(
     }
 }
 
+/// AVX2 downscale for GA (2-byte stride): horizontal x-filtering with
+/// alpha-premultiplied gray + 256-bit y-accumulation via `yacc_fma2`.
+///
+/// Mirrors C's `oil_scale_down_ga_avx2`. The inner pair-tap loop runs only
+/// when `border_buf[i] >= 4`; small-border outputs go through a single
+/// 128-bit-FMA path. Vertical accumulation packs the two channels into one
+/// 256-bit FMA via `yacc_fma2` (sums_y stays channel-major, 8 floats per
+/// output pixel).
+#[target_feature(enable = "avx2,fma")]
+pub unsafe fn scale_down_ga(
+    input: &[u8],
+    sums_y: &mut [f32],
+    out_width: u32,
+    coeffs_x: &[f32],
+    border_buf: &[i32],
+    coeffs_y: &[f32],
+) {
+    let tables = srgb::tables();
+    let i2f = tables.i2f.as_ptr();
+    let cy128 = _mm_loadu_ps(coeffs_y.as_ptr());
+    let cy256 = _mm256_set_m128(cy128, cy128);
+
+    let in_ptr = input.as_ptr();
+    let cx_ptr = coeffs_x.as_ptr();
+    let sy_ptr = sums_y.as_mut_ptr();
+    let border_ptr = border_buf.as_ptr();
+
+    let mut in_idx = 0usize;
+    let mut cx_idx = 0usize;
+    let mut sy_idx = 0usize;
+    let mut sum_g = _mm_setzero_ps();
+    let mut sum_a = _mm_setzero_ps();
+
+    for i in 0..out_width as usize {
+        let border = *border_ptr.add(i);
+        if border >= 4 {
+            let mut sum_g2 = _mm_setzero_ps();
+            let mut sum_a2 = _mm_setzero_ps();
+            let mut j = 0;
+            while j + 1 < border {
+                let cx0 = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let cx1 = _mm_loadu_ps(cx_ptr.add(cx_idx + 4));
+
+                let alpha0 = *i2f.add(*in_ptr.add(in_idx + 1) as usize);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize) * alpha0);
+                sum_g = _mm_add_ps(_mm_mul_ps(cx0, s), sum_g);
+                let s = _mm_set1_ps(alpha0);
+                sum_a = _mm_add_ps(_mm_mul_ps(cx0, s), sum_a);
+
+                let alpha1 = *i2f.add(*in_ptr.add(in_idx + 3) as usize);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx + 2) as usize) * alpha1);
+                sum_g2 = _mm_add_ps(_mm_mul_ps(cx1, s), sum_g2);
+                let s = _mm_set1_ps(alpha1);
+                sum_a2 = _mm_add_ps(_mm_mul_ps(cx1, s), sum_a2);
+
+                in_idx += 4;
+                cx_idx += 8;
+                j += 2;
+            }
+            while j < border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let alpha = *i2f.add(*in_ptr.add(in_idx + 1) as usize);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize) * alpha);
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(alpha);
+                sum_a = _mm_add_ps(_mm_mul_ps(cx, s), sum_a);
+                in_idx += 2;
+                cx_idx += 4;
+                j += 1;
+            }
+            sum_g = _mm_add_ps(sum_g, sum_g2);
+            sum_a = _mm_add_ps(sum_a, sum_a2);
+        } else {
+            for _ in 0..border {
+                let cx = _mm_loadu_ps(cx_ptr.add(cx_idx));
+                let alpha = *i2f.add(*in_ptr.add(in_idx + 1) as usize);
+                let s = _mm_set1_ps(*i2f.add(*in_ptr.add(in_idx) as usize) * alpha);
+                sum_g = _mm_add_ps(_mm_mul_ps(cx, s), sum_g);
+                let s = _mm_set1_ps(alpha);
+                sum_a = _mm_add_ps(_mm_mul_ps(cx, s), sum_a);
+                in_idx += 2;
+                cx_idx += 4;
+            }
+        }
+
+        yacc_fma2(sy_ptr.add(sy_idx), sum_g, sum_a, cy256);
+        sy_idx += 8;
+
+        sum_g = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_g), 4));
+        sum_a = _mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(sum_a), 4));
+    }
+}
+
 /// AVX2 downscale for RGB (3-byte stride): horizontal x-filtering with
 /// 256-bit-widened pair-tap FMA loop + 128-bit y-accumulation.
 ///
